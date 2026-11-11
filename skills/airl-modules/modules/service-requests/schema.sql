@@ -1,5 +1,5 @@
 -- Модуль «Сервисные заявки» (service-requests). Требует kit/kit.sql в той же схеме
--- и представления src_clients, src_parts (адаптер или demo_src.sql).
+-- и представления src_svc_clients, src_svc_parts (адаптер или demo_src.sql).
 -- Запчасти модуль только учитывает; списание со склада в учётной системе делает человек.
 
 -- Паспорт оборудования.
@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS svc_equipment (
                                     'brewer', 'medical_device', 'other')),
     model           text        NOT NULL,
     serial_no       text,
-    client_id       text        NOT NULL,                 -- ключ из src_clients
+    client_id       text        NOT NULL,                 -- ключ из src_svc_clients
     address         text,                                 -- адрес установки, если отличается от клиента
     owner           text        NOT NULL DEFAULT 'client' CHECK (owner IN ('client', 'company')),
     installed_at    date,
@@ -62,7 +62,7 @@ CREATE INDEX IF NOT EXISTS svc_requests_status_idx ON svc_requests (status, due_
 CREATE TABLE IF NOT EXISTS svc_parts_used (
     id               bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     request_id       bigint        NOT NULL REFERENCES svc_requests (id),
-    sku              text          NOT NULL,              -- ключ из src_parts
+    sku              text          NOT NULL,              -- ключ из src_svc_parts
     qty              numeric(18,3) NOT NULL CHECK (qty > 0),
     written_off_ref  text,
     created_at       timestamptz   NOT NULL DEFAULT now(),
@@ -116,7 +116,7 @@ DROP TRIGGER IF EXISTS svc_maint_plans_touch ON svc_maint_plans;
 CREATE TRIGGER svc_maint_plans_touch BEFORE UPDATE ON svc_maint_plans FOR EACH ROW EXECUTE FUNCTION airl_touch();
 
 -- Срок по SLA при создании: от planned_at (плановое) или от created_at, часы по приоритету.
-CREATE OR REPLACE FUNCTION svc_set_due() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE OR REPLACE FUNCTION svc_set_due() RETURNS trigger LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
 BEGIN
     IF NEW.due_at IS NULL THEN
         NEW.due_at := coalesce(NEW.planned_at, NEW.created_at, now())
@@ -130,7 +130,7 @@ DROP TRIGGER IF EXISTS svc_requests_due ON svc_requests;
 CREATE TRIGGER svc_requests_due BEFORE INSERT ON svc_requests FOR EACH ROW EXECUTE FUNCTION svc_set_due();
 
 -- Переходы статусов (схема из MODULE.md), отметки времени и журнал.
-CREATE OR REPLACE FUNCTION svc_status_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE OR REPLACE FUNCTION svc_status_guard() RETURNS trigger LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
 BEGIN
     IF NEW.status IS DISTINCT FROM OLD.status THEN
         IF NOT ((OLD.status = 'new'           AND NEW.status IN ('assigned', 'cancelled'))
@@ -190,7 +190,7 @@ SELECT r.id, r.request_no, r.kind, r.status, r.priority, r.source, r.problem,
        EXISTS (SELECT 1 FROM v_svc_repeat x WHERE x.id = r.id) AS is_repeat
 FROM svc_requests r
 LEFT JOIN svc_equipment e ON e.id = r.equipment_id
-LEFT JOIN src_clients c ON c.client_id = r.client_id;
+LEFT JOIN src_svc_clients c ON c.client_id = r.client_id;
 
 -- Экран «Мои заявки» техника: открытые, по сроку.
 CREATE OR REPLACE VIEW v_svc_open AS
@@ -209,7 +209,7 @@ SELECT e.id, e.equipment_no, e.kind, e.model, e.serial_no, e.client_id, c.client
        (SELECT count(*) FROM v_svc_repeat x WHERE x.equipment_id = e.id) AS repeat_breakdowns,
        e.archived
 FROM svc_equipment e
-LEFT JOIN src_clients c ON c.client_id = e.client_id
+LEFT JOIN src_svc_clients c ON c.client_id = e.client_id
 LEFT JOIN svc_maint_plans mp ON mp.equipment_id = e.id AND mp.active;
 
 -- Запчасти по заявкам: что использовано и что ещё не списано в учёте.
@@ -218,7 +218,7 @@ SELECT pu.id, r.request_no, r.status AS request_status, pu.sku, p.part_name, pu.
        pu.written_off_ref, (pu.written_off_ref IS NULL) AS awaiting_write_off, pu.created_at, pu.created_by
 FROM svc_parts_used pu
 JOIN svc_requests r ON r.id = pu.request_id
-LEFT JOIN src_parts p ON p.sku = pu.sku;
+LEFT JOIN src_svc_parts p ON p.sku = pu.sku;
 
 -- Загрузка техников за текущий месяц.
 CREATE OR REPLACE VIEW v_svc_technicians AS
@@ -234,7 +234,7 @@ WHERE r.technician IS NOT NULL
 GROUP BY r.technician;
 
 -- Создать плановые заявки на ТО на горизонт plan_horizon_days. Повторный вызов дублей не создаёт.
-CREATE OR REPLACE FUNCTION svc_generate_planned(p_actor text) RETURNS int LANGUAGE plpgsql AS $$
+CREATE OR REPLACE FUNCTION svc_generate_planned(p_actor text) RETURNS int LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
 DECLARE
     pl record;
     n  int := 0;
@@ -262,7 +262,7 @@ BEGIN
 END $$;
 
 -- Поставить в очередь уведомления о просрочке SLA: одно на заявку и получателя.
-CREATE OR REPLACE FUNCTION svc_notify_overdue() RETURNS int LANGUAGE plpgsql AS $$
+CREATE OR REPLACE FUNCTION svc_notify_overdue() RETURNS int LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
 DECLARE n int;
 BEGIN
     INSERT INTO airl_notifications (dedup_key, module, channel, recipient, text)

@@ -36,8 +36,8 @@
 
 | № | Вопрос | Ключ | По умолчанию |
 |---|---|---|---|
-| 1 | Откуда список клиентов: CRM · 1С · ведём сами | — (адаптер `src_clients`) | из CRM |
-| 2 | Есть ли справочник запчастей в учёте | — (адаптер `src_parts`, может быть пустым) | из 1С |
+| 1 | Откуда список клиентов: CRM · 1С · ведём сами | — (адаптер `src_svc_clients`) | из CRM |
+| 2 | Есть ли справочник запчастей в учёте | — (адаптер `src_svc_parts`, может быть пустым) | из 1С |
 | 3 | За сколько часов закрываем заявку по приоритету: критичный · высокий · обычный · низкий | `sla_hours` | 8 · 24 · 72 · 168 |
 | 4 | Через сколько дней после ремонта новая поломка считается повторной | `repeat_days` | 30 |
 | 5 | Какое оборудование обслуживаем по графику и как часто | таблица `svc_maint_plans` | по договорам клиентов |
@@ -55,12 +55,14 @@
 
 | Представление | Колонки |
 |---|---|
-| `src_clients` | `client_id` text, `client_name` text, `city` text, `address` text, `phone` text (может быть пусто) |
-| `src_parts` | `sku` text, `part_name` text, `unit` text |
+| `src_svc_clients` | `client_id` text, `client_name` text, `city` text, `address` text, `phone` text (может быть пусто) |
+| `src_svc_parts` | `sku` text, `part_name` text, `unit` text |
 
-`src_clients` — общий вход с модулем `complaints`: колонки одинаковые, адаптер
-пишется один раз. Нет справочника запчастей — адаптер
-`CREATE VIEW src_parts AS SELECT NULL::text AS sku, NULL::text AS part_name, NULL::text AS unit WHERE false`.
+`src_svc_clients` и `src_cmp_clients` (модуль `complaints`) — одинаковые колонки:
+один запрос адаптера, два представления. Имя `src_clients` не используем — его
+заняли модули с другим набором колонок (например `receivables`). Нет справочника
+запчастей — адаптер
+`CREATE VIEW src_svc_parts AS SELECT NULL::text AS sku, NULL::text AS part_name, NULL::text AS unit WHERE false`.
 
 **Таблицы модуля:** `svc_equipment` (паспорт), `svc_requests` (заявки),
 `svc_parts_used` (запчасти), `svc_acts` (акты), `svc_maint_plans` (график ТО).
@@ -80,7 +82,7 @@ new ──► assigned ──► in_progress ──► done ──► closed (т
 `due_at` ставится сам при создании: от времени заявки (или плановой даты) + часы
 по приоритету.
 
-**Персональные данные:** телефон клиента (`src_clients.phone`) и имя принявшего
+**Персональные данные:** телефон клиента (`src_svc_clients.phone`) и имя принявшего
 работу (`svc_acts.signer_name`) — в `pii`, маска для всех, кроме диспетчера
 и руководителя сервиса. Код подтверждения хранится только хешем.
 

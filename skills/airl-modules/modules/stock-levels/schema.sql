@@ -85,7 +85,7 @@ DROP TRIGGER IF EXISTS stk_suggestions_touch ON stk_suggestions;
 CREATE TRIGGER stk_suggestions_touch BEFORE UPDATE ON stk_suggestions FOR EACH ROW EXECUTE FUNCTION airl_touch();
 
 -- Переходы статусов предложения и журнал: suggested → accepted → ordered; suggested|accepted → dismissed.
-CREATE OR REPLACE FUNCTION stk_suggestion_status() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE OR REPLACE FUNCTION stk_suggestion_status() RETURNS trigger LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
 BEGIN
     IF NEW.status IS DISTINCT FROM OLD.status THEN
         IF NOT ((OLD.status = 'suggested' AND NEW.status IN ('accepted', 'dismissed'))
@@ -228,7 +228,7 @@ LEFT JOIN LATERAL (
 ) p ON true;
 
 -- Создать предложения закупки по дефициту. Повторный вызов в тот же день ничего не дублирует.
-CREATE OR REPLACE FUNCTION stk_generate_suggestions(p_actor text) RETURNS int LANGUAGE plpgsql AS $$
+CREATE OR REPLACE FUNCTION stk_generate_suggestions(p_actor text) RETURNS int LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
 DECLARE n int;
 BEGIN
     INSERT INTO stk_suggestions (sku, warehouse_id, suggested_on, on_hand_qty, avg_daily_qty,

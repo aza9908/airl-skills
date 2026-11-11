@@ -1,5 +1,5 @@
 -- Модуль «Обращения и жалобы» (complaints). Требует kit/kit.sql в той же схеме
--- и представление src_clients (адаптер или demo_src.sql).
+-- и представление src_cmp_clients (адаптер или demo_src.sql).
 
 -- Категории обращений: свой срок (часы) и ответственная роль.
 CREATE TABLE IF NOT EXISTS cmp_categories (
@@ -23,8 +23,8 @@ CREATE TABLE IF NOT EXISTS cmp_cases (
     channel          text        NOT NULL CHECK (channel IN ('phone', 'telegram', 'site', 'email', 'instagram',
                                      'delivery_feedback', 'service', 'walk_in')),
     category_id      bigint      NOT NULL REFERENCES cmp_categories (id),
-    client_id        text,                                -- ключ из src_clients; NULL — частное лицо без карточки
-    contact_name     text,                                -- ПДн, только если клиента нет в src_clients
+    client_id        text,                                -- ключ из src_cmp_clients; NULL — частное лицо без карточки
+    contact_name     text,                                -- ПДн, только если клиента нет в src_cmp_clients
     contact_phone    text,                                -- ПДн
     subject          text        NOT NULL,
     description      text        NOT NULL,
@@ -81,7 +81,7 @@ DROP TRIGGER IF EXISTS cmp_comments_touch ON cmp_comments;
 CREATE TRIGGER cmp_comments_touch BEFORE UPDATE ON cmp_comments FOR EACH ROW EXECUTE FUNCTION airl_touch();
 
 -- Срок по SLA при создании: часы категории, иначе часы по приоритету из настроек.
-CREATE OR REPLACE FUNCTION cmp_set_due() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE OR REPLACE FUNCTION cmp_set_due() RETURNS trigger LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
 BEGIN
     IF NEW.due_at IS NULL THEN
         NEW.due_at := coalesce(NEW.created_at, now()) + make_interval(hours => coalesce(
@@ -96,7 +96,7 @@ DROP TRIGGER IF EXISTS cmp_cases_due ON cmp_cases;
 CREATE TRIGGER cmp_cases_due BEFORE INSERT ON cmp_cases FOR EACH ROW EXECUTE FUNCTION cmp_set_due();
 
 -- Переходы статусов (схема из MODULE.md), отметки времени и журнал.
-CREATE OR REPLACE FUNCTION cmp_status_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE OR REPLACE FUNCTION cmp_status_guard() RETURNS trigger LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
 BEGIN
     IF NEW.status IS DISTINCT FROM OLD.status THEN
         IF NOT ((OLD.status = 'new'              AND NEW.status IN ('in_progress', 'rejected'))
@@ -135,7 +135,7 @@ SELECT k.id, k.case_no, k.kind, k.channel, c.code AS category, c.title AS catego
        k.escalation_level, k.root_cause, k.resolution, k.reject_reason, k.csat, k.csat_comment
 FROM cmp_cases k
 JOIN cmp_categories c ON c.id = k.category_id
-LEFT JOIN src_clients cl ON cl.client_id = k.client_id;
+LEFT JOIN src_cmp_clients cl ON cl.client_id = k.client_id;
 
 -- Экран «Очередь»: открытые обращения по сроку.
 CREATE OR REPLACE VIEW v_cmp_queue AS
@@ -185,7 +185,7 @@ GROUP BY date_trunc('month', created_at), category, category_title;
 
 -- Эскалация: просрочка SLA — ответственному и escalate_l1; через escalate_l2_hours
 -- после срока — escalate_l2. Одно уведомление на обращение, уровень и получателя.
-CREATE OR REPLACE FUNCTION cmp_escalate() RETURNS int LANGUAGE plpgsql AS $$
+CREATE OR REPLACE FUNCTION cmp_escalate() RETURNS int LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
 DECLARE n int;
 BEGIN
     WITH due AS (
