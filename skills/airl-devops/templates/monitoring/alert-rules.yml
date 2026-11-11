@@ -1,0 +1,63 @@
+# alert-rules.yml — когда будить человека. Шаблон навыка airl-devops.
+# Каждое правило: что случилось и что делать — ссылка на раздел runbooks.md.
+groups:
+  - name: server
+    rules:
+      - alert: ServerMetricsMissing
+        expr: up{job="node"} == 0
+        for: 3m
+        labels: { severity: critical }
+        annotations:
+          summary: "Нет метрик сервера {{ $labels.server }} больше 3 минут"
+          runbook: "runbooks.md — «Сервис не отвечает»"
+
+      - alert: DiskAlmostFull
+        expr: |
+          (node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs"}
+            / node_filesystem_size_bytes{fstype!~"tmpfs|overlay|squashfs"}) < 0.15
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "На {{ $labels.mountpoint }} свободно меньше 15%"
+          runbook: "runbooks.md — «Диск заполнен»"
+
+      - alert: DiskFullIn24h
+        expr: |
+          predict_linear(node_filesystem_avail_bytes{fstype!~"tmpfs|overlay|squashfs"}[6h], 24 * 3600) < 0
+        for: 30m
+        labels: { severity: warning }
+        annotations:
+          summary: "При нынешнем росте {{ $labels.mountpoint }} заполнится в течение суток"
+          runbook: "runbooks.md — «Диск заполнен»"
+
+      - alert: MemoryLow
+        expr: node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes < 0.10
+        for: 10m
+        labels: { severity: warning }
+        annotations:
+          summary: "Свободной памяти меньше 10% уже 10 минут"
+
+      - alert: CpuSaturated
+        expr: 1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[5m])) > 0.9
+        for: 15m
+        labels: { severity: warning }
+        annotations:
+          summary: "Процессор загружен больше чем на 90% уже 15 минут"
+
+  - name: backups
+    rules:
+      # Скрипт копии после успеха пишет метрику в /var/lib/node_exporter/textfile/backup.prom
+      - alert: BackupTooOld
+        expr: time() - airl_backup_last_success_timestamp_seconds > 26 * 3600
+        for: 10m
+        labels: { severity: critical }
+        annotations:
+          summary: "Резервной копии {{ $labels.project }} больше 26 часов"
+          runbook: "runbooks.md — «Восстановление из копии» (раздел о проверке копий)"
+
+      - alert: BackupMetricMissing
+        expr: absent(airl_backup_last_success_timestamp_seconds)
+        for: 1h
+        labels: { severity: warning }
+        annotations:
+          summary: "Нет данных о резервных копиях: скрипт копии не пишет метрику"

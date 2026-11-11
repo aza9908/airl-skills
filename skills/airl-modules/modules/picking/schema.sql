@@ -636,6 +636,7 @@ DECLARE
     v_track  boolean;
     v_task   bigint;
 BEGIN
+    s := pick_parse(p_payload);
     <<chk>>
     BEGIN
         SELECT * INTO t FROM pick_tasks x WHERE x.id = p_task_id FOR UPDATE;
@@ -651,7 +652,6 @@ BEGIN
             v_code := 'other_task_open'; v_msg := 'Сначала закончите задание, которое уже собираете'; EXIT chk;
         END IF;
 
-        s := pick_parse(p_payload);
         IF s.kind = 'cell' THEN
             SELECT c.id INTO v_cell FROM pick_cells c JOIN pick_zones z ON z.id = c.zone_id
             WHERE c.code = s.cell_code AND NOT c.archived AND z.warehouse_id = t.warehouse_id AND z.kind = 'storage';
@@ -839,6 +839,7 @@ DECLARE
     v_pack  numeric;
     v_task  bigint;
 BEGIN
+    s := pick_parse(p_payload);
     <<chk>>
     BEGIN
         SELECT * INTO t FROM pick_tasks x WHERE x.id = p_task_id FOR UPDATE;
@@ -846,7 +847,6 @@ BEGIN
         v_task := t.id;
         IF t.status <> 'picked' THEN v_code := 'task_not_ready'; v_msg := 'Задание ещё не собрано или уже проверено'; EXIT chk; END IF;
         IF v_qty <= 0 THEN v_code := 'bad_qty'; v_msg := 'Количество должно быть больше нуля'; EXIT chk; END IF;
-        s := pick_parse(p_payload);
         IF s.kind NOT IN ('lot', 'sku') THEN v_code := 'unknown_code'; v_msg := 'Код не распознан'; EXIT chk; END IF;
         SELECT i.track_lots INTO v_track FROM src_pick_items i WHERE i.sku = s.sku;
         IF s.kind = 'sku' AND coalesce(v_track, false) THEN
@@ -1041,6 +1041,7 @@ DECLARE
     v_msg  text;
     v_rid  bigint;
 BEGIN
+    s := pick_parse(p_payload);
     <<chk>>
     BEGIN
         SELECT * INTO r FROM pick_receipts x WHERE x.id = p_receipt_id FOR UPDATE;
@@ -1048,7 +1049,6 @@ BEGIN
         v_rid := r.id;
         IF r.status NOT IN ('expected', 'receiving') THEN v_code := 'receipt_closed'; v_msg := 'Приёмка уже закрыта'; EXIT chk; END IF;
         IF p_qty IS NULL OR p_qty <= 0 THEN v_code := 'bad_qty'; v_msg := 'Количество должно быть больше нуля'; EXIT chk; END IF;
-        s := pick_parse(p_payload);
         IF s.kind NOT IN ('lot', 'sku') THEN v_code := 'unknown_code'; v_msg := 'Код не распознан'; EXIT chk; END IF;
         SELECT i.* INTO it FROM src_pick_items i WHERE i.sku = s.sku;
         IF NOT FOUND THEN v_code := 'unknown_item'; v_msg := 'Товара ' || s.sku || ' нет в справочнике'; EXIT chk; END IF;
@@ -1152,9 +1152,9 @@ DECLARE
     v_code  text;
     v_msg   text;
 BEGIN
+    s := pick_parse(p_item_payload);
     <<chk>>
     BEGIN
-        s := pick_parse(p_item_payload);
         IF s.kind NOT IN ('lot', 'sku') THEN v_code := 'unknown_code'; v_msg := 'Код товара не распознан'; EXIT chk; END IF;
         SELECT i.track_lots INTO v_track FROM src_pick_items i WHERE i.sku = s.sku;
         IF s.kind = 'sku' AND coalesce(v_track, false) THEN v_code := 'scan_lot_label'; v_msg := 'Сканируйте этикетку партии'; EXIT chk; END IF;
@@ -1204,6 +1204,7 @@ DECLARE
     v_msg   text;
     v_cid   bigint;
 BEGIN
+    s := pick_parse(p_item_payload);
     <<chk>>
     BEGIN
         SELECT * INTO k FROM pick_counts x WHERE x.id = p_count_id FOR UPDATE;
@@ -1214,7 +1215,6 @@ BEGIN
         WHERE 'AIRL:CELL:' || cc.code = btrim(p_cell_payload) AND z.warehouse_id = k.warehouse_id
           AND (k.zone_id IS NULL AND z.kind = 'storage' OR z.id = k.zone_id);
         IF v_cell IS NULL THEN v_code := 'wrong_cell'; v_msg := 'Ячейка не входит в пересчёт'; EXIT chk; END IF;
-        s := pick_parse(p_item_payload);
         IF s.kind NOT IN ('lot', 'sku') THEN v_code := 'unknown_code'; v_msg := 'Код товара не распознан'; EXIT chk; END IF;
         SELECT i.track_lots INTO v_track FROM src_pick_items i WHERE i.sku = s.sku;
         IF NOT FOUND THEN v_code := 'unknown_item'; v_msg := 'Товара нет в справочнике'; EXIT chk; END IF;

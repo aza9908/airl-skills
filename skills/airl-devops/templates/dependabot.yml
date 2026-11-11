@@ -1,0 +1,48 @@
+# .github/dependabot.yml — автоматические предложения обновить зависимости.
+# Шаблон навыка airl-devops. Удалите блоки экосистем, которых нет в проекте.
+# Каждое предложение приходит отдельным pull request и проходит те же проверки CI,
+# что и обычный код. Сливать — после зелёного CI и проверки на staging.
+# Мелкие обновления (minor, patch) собираются в один PR в неделю, крупные (major) —
+# отдельными PR: их читают глазами, там бывают несовместимые изменения.
+# Альтернатива — Renovate (renovate.json), если нужен один инструмент для GitHub и GitLab.
+
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor-patch:
+        update-types: ["minor", "patch"]
+    labels: ["dependencies"]
+
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      pip-minor-patch:
+        update-types: ["minor", "patch"]
+    labels: ["dependencies"]
+
+  # Базовые образы в Dockerfile (node:22-slim, python:3.12-slim, postgres:16)
+  - package-ecosystem: docker
+    directory: "/"
+    schedule:
+      interval: weekly
+    labels: ["dependencies"]
+
+  # Версии действий в .github/workflows
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]
+    labels: ["dependencies"]
