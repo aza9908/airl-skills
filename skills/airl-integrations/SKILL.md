@@ -144,7 +144,6 @@ argument-hint: "[пусто — опись по SCOPE.md и карте · «1с�
         │ producer                  │ POST /int/hooks/<source>
         ▼                           ▼  подпись → int_inbox_receive → 200
    int_outbox ──worker──► система   int_inbox ──worker──► core / mart / int_outbox
-        │                                   
         └── int_reconciliation ◄── сверка (ежедневно) ── чтение из системы
                       │
               m_int_health ──► плитка «Интеграции» в хабе, оповещения

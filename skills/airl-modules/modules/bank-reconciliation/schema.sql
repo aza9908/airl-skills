@@ -361,6 +361,24 @@ BEGIN
     END IF;
 END $$;
 
+-- Закрыть устаревшие предложения: документ уже оплачен другой строкой, исчез из источника,
+-- или остаток строки меньше предложенного. p_items — проверить только предложения с этими документами.
+CREATE OR REPLACE FUNCTION bank_expire_stale(p_actor text, p_items text[] DEFAULT NULL) RETURNS int
+LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+DECLARE
+    v_n int;
+BEGIN
+    UPDATE bank_matches m SET status = 'expired', comment = 'документ или строка изменились', updated_by = p_actor
+    WHERE m.status = 'suggested'
+      AND (p_items IS NULL OR EXISTS (SELECT 1 FROM bank_match_allocs a WHERE a.match_id = m.id AND a.item_id = ANY (p_items)))
+      AND (NOT EXISTS (SELECT 1 FROM v_bank_lines l WHERE l.line_id = m.line_id AND l.state <> 'ignored'
+                         AND l.remainder >= (SELECT sum(a.amount) FROM bank_match_allocs a WHERE a.match_id = m.id))
+           OR EXISTS (SELECT 1 FROM bank_match_allocs a LEFT JOIN v_bank_open_items i ON i.item_id = a.item_id
+                      WHERE a.match_id = m.id AND (i.item_id IS NULL OR i.remaining < a.amount)));
+    GET DIAGNOSTICS v_n = ROW_COUNT;
+    RETURN v_n;
+END $$;
+
 -- Подтвердить предложение как есть. Если разнесение нужно другое — отклонить и сопоставить вручную.
 CREATE OR REPLACE FUNCTION bank_confirm(p_match_id bigint, p_actor text, p_auto boolean DEFAULT false) RETURNS text
 LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
@@ -376,6 +394,8 @@ BEGIN
     UPDATE bank_matches SET status = 'confirmed', confirmed_at = now(), confirmed_by = p_actor,
                             auto_confirmed = p_auto, updated_by = p_actor
      WHERE id = p_match_id;
+    -- те же документы в других предложениях могли стать оплаченными
+    PERFORM bank_expire_stale(p_actor, ARRAY(SELECT item_id FROM bank_match_allocs WHERE match_id = p_match_id));
     RETURN v_m.match_no;
 END $$;
 
@@ -507,12 +527,7 @@ DECLARE
 BEGIN
     PERFORM pg_advisory_xact_lock(hashtext('bank-suggest'));
 
-    UPDATE bank_matches m SET status = 'expired', comment = 'документ или строка изменились', updated_by = p_actor
-    WHERE m.status = 'suggested' AND (
-          NOT EXISTS (SELECT 1 FROM v_bank_lines l WHERE l.line_id = m.line_id AND l.state <> 'ignored'
-                        AND l.remainder >= (SELECT sum(a.amount) FROM bank_match_allocs a WHERE a.match_id = m.id))
-       OR EXISTS (SELECT 1 FROM bank_match_allocs a LEFT JOIN v_bank_open_items i ON i.item_id = a.item_id
-                  WHERE a.match_id = m.id AND (i.item_id IS NULL OR i.remaining < a.amount)));
+    PERFORM bank_expire_stale(p_actor);
 
     FOR r IN
         WITH l AS (
@@ -674,13 +689,15 @@ BEGIN
 END $$;
 
 -- Показатель: доля строк выписки, закрытых предложением модуля без ручного выбора
--- (подтверждено человеком или автоматически), по месяцу даты платежа. Отмеченные
--- «не сопоставлять» в расчёт не входят.
+-- (подтверждено человеком или автоматически), по месяцу даты платежа. В знаменателе —
+-- разнесённые строки и строки старше unmatched_grace_days (свежие, ещё не разобранные,
+-- показатель не портят); отмеченные «не сопоставлять» не входят.
 CREATE OR REPLACE VIEW m_bank_auto_match_rate AS
 WITH c AS (
     SELECT date_trunc('month', value_date) AS m,
            round(100.0 * count(*) FILTER (WHERE state = 'matched' AND by_suggestion)
-                 / NULLIF(count(*) FILTER (WHERE state <> 'ignored'), 0), 1) AS v
+                 / NULLIF(count(*) FILTER (WHERE state = 'matched' OR (state <> 'ignored' AND age_days >
+                       (airl_setting('bank-reconciliation', 'unmatched_grace_days', '2'))::text::int)), 0), 1) AS v
     FROM v_bank_lines
     GROUP BY date_trunc('month', value_date)
 )
