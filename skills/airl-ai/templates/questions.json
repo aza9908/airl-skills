@@ -1,0 +1,23 @@
+{
+  "company": "STEP COFFEE",
+  "model": "claude-opus-5-5",
+  "effort": "medium",
+  "queries": [
+    {
+      "name": "qc_reject_rate_by_month",
+      "description": "Доля отклонённых партий обжарки по месяцам, последние N месяцев. Для вопросов про брак, качество обжарки, отклонённые партии.",
+      "roles": ["ceo", "head_roastqc"],
+      "params": {
+        "months": {"type": "integer", "minimum": 1, "maximum": 24}
+      },
+      "sql": "SELECT period, value, unit, status FROM mart_roastqc.m_qc_reject_rate ORDER BY period DESC LIMIT %(months)s"
+    },
+    {
+      "name": "unchecked_batches_now",
+      "description": "Сколько партий сейчас ждут проверки качества дольше нормы. Для вопросов про непроверенные партии и хвост контроля.",
+      "roles": ["ceo", "head_roastqc", "staff_roastqc"],
+      "params": {},
+      "sql": "SELECT period, value, unit, status FROM mart_roastqc.m_qc_unchecked_overdue"
+    }
+  ]
+}

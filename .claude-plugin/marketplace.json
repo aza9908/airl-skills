@@ -1,12 +1,15 @@
 {
   "name": "airl-skills",
-  "owner": { "name": "AI Research Labs", "url": "https://airl.kz" },
+  "owner": {
+    "name": "AI Research Labs",
+    "url": "https://airl.kz"
+  },
   "description": "Навыки AIRL для Claude Code: VibeOps и «Первый продукт»",
   "plugins": [
     {
       "name": "airl",
       "source": "./",
-      "description": "Навыки AIRL: /airl-spec, /airl-dwh, /airl-pwa, /airl-cybersecurity, /airl-devops, /airl-hub, /airl-architecture-extra, /design, /architecture, /security"
+      "description": "Навыки AIRL: /airl-spec, /airl-modules, /airl-connect, /airl-dwh, /airl-pwa, /airl-cybersecurity, /airl-devops, /airl-ai, /airl-hub, /airl-architecture-extra, /design, /architecture, /security"
     }
   ]
 }
