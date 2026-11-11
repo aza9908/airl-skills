@@ -1,5 +1,5 @@
 -- Модуль «Дебиторка» (receivables). Требует kit/kit.sql в той же схеме
--- и представления src_clients, src_receivables_docs (адаптер или demo_src.sql).
+-- и представления src_rcv_clients, src_receivables_docs (адаптер или demo_src.sql).
 -- Сумма показателей — только в основной валюте (настройка currency, по умолчанию KZT).
 
 -- Действия по взысканию: звонки, письма, встречи, остановка отгрузок.
@@ -87,7 +87,7 @@ SELECT d.doc_no, d.doc_date, d.client_id,
              ELSE '90+' END)::text AS bucket,
        (d.currency = (airl_setting('receivables', 'currency', '"KZT"') #>> '{}')) AS in_main_currency
 FROM src_receivables_docs d
-LEFT JOIN src_clients c ON c.client_id = d.client_id
+LEFT JOIN src_rcv_clients c ON c.client_id = d.client_id
 CROSS JOIN LATERAL (
     SELECT COALESCE(d.due_date,
                     CASE WHEN (airl_setting('receivables', 'use_contract_terms', 'true'))::text::boolean
@@ -123,7 +123,7 @@ SELECT o.id AS promise_id, o.client_id, c.client_name, c.manager_id, o.action_id
        o.status, o.comment, o.created_at, o.created_by, o.outcome,
        CASE WHEN o.outcome = 'broken' THEN current_date - o.promised_date END AS days_late
 FROM o
-LEFT JOIN src_clients c ON c.client_id = o.client_id;
+LEFT JOIN src_rcv_clients c ON c.client_id = o.client_id;
 
 -- Экран «Дебиторка по клиентам»: возраст долга, лимит, последнее действие, обещание.
 -- Только основная валюта; документы в других валютах — в v_rcv_data_quality.
@@ -157,7 +157,7 @@ SELECT a.client_id, a.client_name, a.manager_id, a.is_aggregator,
        la.next_contact_date,
        pr.promised_date, pr.promised_amount, pr.outcome AS promise_outcome
 FROM agg a
-LEFT JOIN src_clients c ON c.client_id = a.client_id
+LEFT JOIN src_rcv_clients c ON c.client_id = a.client_id
 LEFT JOIN LATERAL (
     SELECT x.created_at, x.kind, x.result, x.next_contact_date FROM rcv_actions x
     WHERE x.client_id = a.client_id AND x.status = 'active'
@@ -220,7 +220,7 @@ SELECT x.id, x.client_id, c.client_name, c.manager_id, x.doc_no, x.kind, x.resul
        x.next_contact_date, (x.next_contact_date < current_date) AS next_contact_overdue,
        x.status, x.created_at, x.created_by
 FROM rcv_actions x
-LEFT JOIN src_clients c ON c.client_id = x.client_id;
+LEFT JOIN src_rcv_clients c ON c.client_id = x.client_id;
 
 -- Показатель: просроченная дебиторка на сегодня, основная валюта, без агрегаторов.
 CREATE OR REPLACE VIEW m_receivables_overdue AS

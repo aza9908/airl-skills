@@ -1,5 +1,5 @@
 -- Демо-источники для модуля «Дебиторка»: клиенты и документы реализации.
--- Синтетика, только для разработки и показа. В работе src_clients и
+-- Синтетика, только для разработки и показа. В работе src_rcv_clients и
 -- src_receivables_docs заменяет адаптер /airl-dwh (1С: реализации и оплаты) или /airl-connect.
 
 CREATE TABLE IF NOT EXISTS demo_rcv_clients (
@@ -77,7 +77,7 @@ FROM (VALUES
 LEFT JOIN demo_rcv_clients c ON c.client_id = v.client_id
 ON CONFLICT (doc_no) DO NOTHING;
 
-CREATE OR REPLACE VIEW src_clients AS
+CREATE OR REPLACE VIEW src_rcv_clients AS
 SELECT client_id, client_name, credit_limit, payment_terms_days, manager_id, is_aggregator
 FROM demo_rcv_clients;
 

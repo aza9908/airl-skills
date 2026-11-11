@@ -1,6 +1,6 @@
 -- Модуль «План-факт» (plan-fact). Требует kit/kit.sql в той же схеме
--- и представление src_facts (адаптер или demo_src.sql).
--- Планы вводят люди (таблица pf_plans), факты приходят из src_facts.
+-- и представление src_pf_facts (адаптер или demo_src.sql).
+-- Планы вводят люди (таблица pf_plans), факты приходят из src_pf_facts.
 
 -- Какие показатели планируем и как их складывать.
 CREATE TABLE IF NOT EXISTS pf_metric_defs (
@@ -88,7 +88,7 @@ SELECT f.metric_id,
              THEN (array_agg(f.value ORDER BY f.period DESC))[1]
              ELSE sum(f.value) END)::numeric AS fact_value,
        max(f.period) AS last_fact_date
-FROM src_facts f
+FROM src_pf_facts f
 LEFT JOIN pf_metric_defs d ON d.metric_id = f.metric_id
 GROUP BY f.metric_id, date_trunc('month', f.period)::date, f.dimension_type, f.dimension_value, d.aggregation;
 
@@ -153,7 +153,9 @@ SELECT plan_id, metric_id, title, unit, higher_is_better,
        (forecast_value - plan_value)::numeric(18,2) AS forecast_deviation,
        work_days_total, work_days_passed,
        ly_fact_value,
-       round(100.0 * (fact_value - ly_fact_value) / NULLIF(ly_fact_value, 0), 1) AS yoy_pct,
+       -- к прошлому году: для текущего месяца сравнивается прогноз (оценка), иначе неполный месяц
+       round(100.0 * (CASE WHEN month_state = 'current' THEN forecast_value ELSE fact_value END - ly_fact_value)
+             / NULLIF(ly_fact_value, 0), 1) AS yoy_pct,
        (CASE WHEN month_state = 'future' THEN NULL
              ELSE airl_traffic(CASE WHEN month_state = 'current' THEN forecast_pct ELSE completion_pct END,
                                CASE WHEN higher_is_better THEN warn_below ELSE warn_above END,
@@ -171,10 +173,13 @@ ORDER BY CASE status WHEN 'danger' THEN 0 WHEN 'warning' THEN 1 ELSE 2 END,
          metric_id, dimension_type, dimension_value;
 
 -- Экран «История»: уровень компании по месяцам, факт, прошлый год и план (если был).
+-- Текущий месяц неполный: yoy_pct для него пустой (сравнение — в v_pf_current по прогнозу).
 CREATE OR REPLACE VIEW v_pf_history AS
 SELECT f.metric_id, d.title, d.unit, f.month, to_char(f.month, 'YYYY-MM') AS period,
        f.fact_value, ly.fact_value AS ly_fact_value,
-       round(100.0 * (f.fact_value - ly.fact_value) / NULLIF(ly.fact_value, 0), 1) AS yoy_pct,
+       (f.month < date_trunc('month', current_date)::date) AS month_complete,
+       CASE WHEN f.month < date_trunc('month', current_date)::date
+            THEN round(100.0 * (f.fact_value - ly.fact_value) / NULLIF(ly.fact_value, 0), 1) END AS yoy_pct,
        p.plan_value,
        round(100.0 * f.fact_value / NULLIF(p.plan_value, 0), 1) AS completion_pct
 FROM v_pf_facts_month f

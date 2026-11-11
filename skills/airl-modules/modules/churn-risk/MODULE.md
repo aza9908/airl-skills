@@ -50,7 +50,7 @@
 
 ## Данные
 
-**Вход** — представление `src_sales`, которое пишет `/airl-dwh` (1С, `core.sales`) или `/airl-connect`:
+**Вход** — представление `src_churn_sales`, которое пишет `/airl-dwh` (1С, `core.sales`) или `/airl-connect`:
 
 | Колонка | Тип | Что |
 |---|---|---|

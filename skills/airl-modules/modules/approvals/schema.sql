@@ -1,5 +1,5 @@
 -- Модуль «Согласование заявок» (approvals). Требует kit/kit.sql в той же схеме
--- и представления src_departments, src_counterparties (адаптер или demo_src.sql).
+-- и представления src_appr_departments, src_appr_counterparties (адаптер или demo_src.sql).
 -- Сумма «в валюте учёта» (amount_base) — в валюте настройки currency (по умолчанию KZT).
 
 -- Статьи расходов (виды расхода).
@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS appr_rules (
 );
 
 -- Шаги маршрута: упорядоченный список ролей согласующих.
--- Роль dept_head — руководитель подразделения заявки (src_departments.head_user_id).
+-- Роль dept_head — руководитель подразделения заявки (src_appr_departments.head_user_id).
 CREATE TABLE IF NOT EXISTS appr_rule_steps (
     id            bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     rule_id       bigint      NOT NULL REFERENCES appr_rules (id),
@@ -74,7 +74,7 @@ CREATE TABLE IF NOT EXISTS appr_requests (
                       CHECK (request_type IN ('payment', 'expense', 'purchase', 'unplanned_purchase')),
     dept_id           text          NOT NULL,
     category          text          NOT NULL REFERENCES appr_categories (code),
-    counterparty_id   text,                      -- ключ в src_counterparties; NULL — новый контрагент
+    counterparty_id   text,                      -- ключ в src_appr_counterparties; NULL — новый контрагент
     counterparty_name text,                      -- как написал заявитель (для нового контрагента)
     purpose           text          NOT NULL,
     doc_ref           text,                      -- номер счёта, заказа или договора
@@ -200,7 +200,7 @@ SELECT b.id AS budget_id, b.dept_id, d.dept_name, b.category, c.title AS categor
        (COALESCE(u.approved, 0) + COALESCE(u.paid, 0)) > b.amount AS overrun
 FROM appr_budgets b
 LEFT JOIN used u ON u.dept_id = b.dept_id AND u.category = b.category AND u.budget_month = b.month
-LEFT JOIN src_departments d ON d.dept_id = b.dept_id
+LEFT JOIN src_appr_departments d ON d.dept_id = b.dept_id
 LEFT JOIN appr_categories c ON c.code = b.category;
 
 -- Реестр заявок с отметками об отклонениях (нестандартных операциях).
@@ -215,9 +215,9 @@ WITH base AS (
            EXISTS (SELECT 1 FROM airl_attachments a
                    WHERE a.module = 'approvals' AND a.entity = 'request' AND a.entity_id = r.request_no) AS has_document
     FROM appr_requests r
-    LEFT JOIN src_departments d     ON d.dept_id = r.dept_id
+    LEFT JOIN src_appr_departments d     ON d.dept_id = r.dept_id
     LEFT JOIN appr_categories c     ON c.code = r.category
-    LEFT JOIN src_counterparties cp ON cp.counterparty_id = r.counterparty_id
+    LEFT JOIN src_appr_counterparties cp ON cp.counterparty_id = r.counterparty_id
     LEFT JOIN v_appr_budget b       ON b.dept_id = r.dept_id AND b.category = r.category AND b.month = r.budget_month
 ),
 flagged AS (
@@ -266,7 +266,7 @@ SELECT s.id AS step_id, s.request_id, r.request_no, s.round, s.step_no, s.approv
        r.budget, r.budget_remaining, r.budget_remaining_after_pending, r.flags
 FROM appr_steps s
 JOIN v_appr_requests r ON r.id = s.request_id AND r.status = 'on_approval' AND r.current_round = s.round
-LEFT JOIN src_departments d ON d.dept_id = r.dept_id
+LEFT JOIN src_appr_departments d ON d.dept_id = r.dept_id
 LEFT JOIN LATERAL (
     SELECT max(p.decided_at) AS decided_at FROM appr_steps p
     WHERE p.request_id = s.request_id AND p.round = s.round AND p.step_no < s.step_no

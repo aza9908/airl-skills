@@ -1,5 +1,5 @@
 -- Демо-источник для модуля «План-факт»: факты по месяцам за ~16 месяцев.
--- Синтетика, только для разработки и показа. В работе src_facts пишет адаптер
+-- Синтетика, только для разработки и показа. В работе src_pf_facts пишет адаптер
 -- /airl-dwh поверх представлений показателей хаба (metrics.m_revenue и т. п.) или 1С.
 
 CREATE TABLE IF NOT EXISTS demo_pf_facts (
@@ -59,7 +59,7 @@ CROSS JOIN generate_series(0, 15) AS g(k)
 ON CONFLICT DO NOTHING;
 
 -- Вход модуля. Уровень «компания» = сумма филиалов (так обычно делает и адаптер).
-CREATE OR REPLACE VIEW src_facts AS
+CREATE OR REPLACE VIEW src_pf_facts AS
 SELECT metric_id, period, dimension_type, dimension_value, value
 FROM demo_pf_facts
 UNION ALL

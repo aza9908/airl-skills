@@ -55,7 +55,7 @@
 | | `amount`, `paid_amount` | numeric | сумма и сколько уже оплачено |
 | | `currency` | char(3) | валюта |
 | | `manager_id`, `branch_id` | text | менеджер, филиал |
-| `src_clients` | `client_id`, `client_name` | text | клиент |
+| `src_rcv_clients` | `client_id`, `client_name` | text | клиент |
 | | `credit_limit` | numeric | кредитный лимит; NULL — не задан |
 | | `payment_terms_days` | int | отсрочка по договору, дней |
 | | `manager_id` | text | закреплённый менеджер |

@@ -1,5 +1,5 @@
 -- Демо-источник для модуля «Клиенты под риском»: продажи B2B-клиентам за ~8 месяцев.
--- Синтетика, только для разработки и показа. В работе src_sales заменяет адаптер
+-- Синтетика, только для разработки и показа. В работе src_churn_sales заменяет адаптер
 -- /airl-dwh (1С: реализации, core.sales) или /airl-connect (CRM).
 
 CREATE TABLE IF NOT EXISTS demo_churn_sales (
@@ -51,6 +51,6 @@ WHERE w BETWEEN p.last_w AND p.first_w
   AND (w - p.last_w) % p.every = 0
 ON CONFLICT (sale_id) DO NOTHING;
 
-CREATE OR REPLACE VIEW src_sales AS
+CREATE OR REPLACE VIEW src_churn_sales AS
 SELECT client_id, client_name, point_id, sale_date, amount, gross_profit, manager_id, branch_id, is_aggregator
 FROM demo_churn_sales;

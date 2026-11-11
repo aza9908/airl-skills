@@ -1,5 +1,5 @@
 -- Модуль «Клиенты под риском» (churn-risk). Требует kit/kit.sql в той же схеме
--- и представление src_sales (адаптер или demo_src.sql).
+-- и представление src_churn_sales (адаптер или demo_src.sql).
 -- Правило, а не ИИ: закупки клиента за последние N недель сравниваются с его же
 -- средними закупками за предыдущие месяцы. Все пороги — в airl_settings.
 
@@ -101,7 +101,7 @@ per AS (
            count(DISTINCT s.sale_date) FILTER (WHERE s.sale_date >= w.recent_start)::int AS recent_orders,
            count(DISTINCT s.sale_date) FILTER (WHERE s.sale_date >= w.base_start)::int AS window_orders,
            min(s.sale_date) FILTER (WHERE s.sale_date >= w.base_start) AS window_first
-    FROM src_sales s
+    FROM src_churn_sales s
     CROSS JOIN win w
     WHERE (w.include_aggr OR NOT COALESCE(s.is_aggregator, false))
       AND s.sale_date <= current_date
@@ -243,7 +243,7 @@ BEGIN
     SELECT 'churn-risk:' || l.risk_status || ':' || l.client_id || '.' || to_char(current_date, 'YYYY-MM') || ':' || l.manager_id,
            'churn-risk', v_channel, l.manager_id,
            'Клиент ' || l.client_name || CASE l.risk_status WHEN 'declining' THEN ' снизил закупки на '
-                || abs(round(l.change_pct)) || '%' ELSE ' не покупает ' || l.days_since_last || ' дн.' END
+                || abs(round(l.change_pct)) || '%' ELSE ' не покупает ' || l.days_since_last || ' дн' END
            || '. Оценка потерь: ' || round(l.est_lost_monthly) || ' в месяц'
     FROM v_churn_manager_list l
     WHERE l.risk_status IN ('declining', 'silent') AND l.manager_id IS NOT NULL

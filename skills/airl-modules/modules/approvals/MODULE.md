@@ -53,11 +53,11 @@
 
 | Представление | Колонка | Тип | Что |
 |---|---|---|---|
-| `src_departments` | `dept_id` | text | код подразделения |
+| `src_appr_departments` | `dept_id` | text | код подразделения |
 | | `dept_name` | text | название |
 | | `branch_id` | text | филиал |
 | | `head_user_id` | text | руководитель (для шага `dept_head`) |
-| `src_counterparties` | `counterparty_id` | text | код контрагента в 1С |
+| `src_appr_counterparties` | `counterparty_id` | text | код контрагента в 1С |
 | | `counterparty_name` | text | название |
 | | `counterparty_type` | text | supplier · contractor · employee |
 | | `tax_id` | text | БИН/ИИН |

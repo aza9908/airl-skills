@@ -270,8 +270,10 @@ def check_live(svc, base_url, map_metrics, cookie):
             problems.append("элемент metrics не объект")
             continue
         mid = m.get("id")
-        seen.add(mid)
-        if mid not in declared or (map_metrics and mid not in map_metrics):
+        # семейство показателей: plan_completion:revenue объявляется как plan_completion
+        base = mid.split(":", 1)[0] if isinstance(mid, str) else mid
+        seen.add(base)
+        if base not in declared or (map_metrics and base not in map_metrics):
             problems.append(f"показатель '{mid}' не объявлен в hub.metrics или его нет в карте")
         value = m.get("value")
         if isinstance(value, bool) or not isinstance(value, (int, float)):
