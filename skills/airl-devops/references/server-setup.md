@@ -442,12 +442,19 @@ docker rm -f restore-test
 Перезапуск Docker после этой правки перезапускает контейнеры — жёлтая зона.
 
 Набор Grafana + Prometheus + Loki — только если так решено в `ARCHITECTURE.md`.
+Готовые оповещения в Telegram без Prometheus (`templates/server-checks.sh`), метрики
+для уровня 2+ (`templates/monitoring/`), учёт ошибок и формат логов — в `operations.md`.
 
 ## Часть 7. Автоматическая выкладка из GitHub и откат
 
 Цепочка: отправили код в `main` → проверки → сборка образа → образ в реестр GitHub
 → сервер забирает образ по метке → проверка `/healthz` → при сбое возврат
 на предыдущую метку.
+
+Это минимальная выкладка в одну среду. Продакшен-вариант — staging на каждый коммит,
+ворота качества (линтер, типы, миграции на чистой базе, тесты, `review_checks.sh`,
+Trivy) и продакшен по метке с одобрением — `templates/ci-cd.yml` и `templates/deploy.sh`,
+порядок в `production.md`. Он заменяет `deploy.yml` из этой части, а не дополняет.
 
 ### Скрипт выкладки на сервере
 
@@ -540,7 +547,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # сюда — шаги проверок проекта: линтер, тесты
+      # сюда — шаги проверок проекта: линтер, тесты, bash scripts/review_checks.sh
+      # (полный набор ворот — templates/ci-cd.yml)
       - name: Имя образа строчными буквами
         run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
       - uses: docker/login-action@v3

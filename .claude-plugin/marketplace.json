@@ -4,12 +4,12 @@
     "name": "AI Research Labs",
     "url": "https://airl.kz"
   },
-  "description": "Навыки AIRL для Claude Code: VibeOps и «Первый продукт»",
+  "description": "Навыки AIRL для Claude Code: курс VibeOps",
   "plugins": [
     {
       "name": "airl",
       "source": "./",
-      "description": "Навыки AIRL: /airl-spec, /airl-modules, /airl-connect, /airl-dwh, /airl-pwa, /airl-cybersecurity, /airl-devops, /airl-ai, /airl-hub, /airl-architecture-extra, /design, /architecture, /security"
+      "description": "Навыки AIRL: /airl-spec, /airl-modules, /airl-connect, /airl-dwh, /airl-pwa, /airl-cybersecurity, /airl-devops, /airl-ai, /airl-hub, /airl-architecture-extra, /airl-integrations, /airl-code-review, /airl-debug"
     }
   ]
 }
