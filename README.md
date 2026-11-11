@@ -4,6 +4,8 @@
 с готовыми вариантами ответа и рекомендацией. Отвечать можно одной буквой.
 Технических знаний не требуется.
 
+Установка — две команды, см. раздел [Установка](#установка).
+
 Два набора:
 
 - **VibeOps** (`/airl-*`) — четыре недели от рабочей задачи до боевого продукта:
@@ -94,11 +96,8 @@
 в свою витрину — это закреплено правами в базе), один вход и роли, обновления
 с проверкой и откатом одной командой.
 
-Проверить контракт сервиса перед приёмкой можно самому:
-
-```bash
-python3 ~/.claude/skills/airl-hub/scripts/check_service.py --service airl.service.json --map airl/COMPANY_MAP.md --files-only
-```
+Проверить контракт сервиса перед приёмкой можно самому: запустите
+`/airl-hub самопроверка` в репозитории сервиса.
 
 ---
 
@@ -115,48 +114,64 @@ python3 ~/.claude/skills/airl-hub/scripts/check_service.py --service airl.servic
 ## Установка
 
 Нужно один раз. После этого навыки работают во всех ваших проектах.
+Есть два способа. Первый проще и сам обновляется по одной команде.
 
-### Шаг 1. Расширение Claude в VS Code
+### Способ 1. Плагин Claude Code — рекомендуем
 
-Откройте VS Code. Слева на панели найдите значок с квадратиками — это Extensions.
-Или нажмите **Cmd + Shift + X** (на Windows **Ctrl + Shift + X**).
+**Шаг 1.** Откройте VS Code и установите расширение **Claude Code** от издателя
+**Anthropic**: значок с квадратиками слева (Extensions) → в поиске `Claude Code` →
+Install. Справа появится значок Claude — нажмите и войдите в свой аккаунт.
 
-В поиске наберите **Claude Code**. Установите расширение от издателя **Anthropic**.
+**Шаг 2.** Откройте терминал: меню **Terminal → New Terminal**. Вставьте первую
+команду и нажмите Enter — она подключает каталог навыков AIRL:
 
-Справа появится значок Claude. Нажмите на него и войдите в свой аккаунт.
+```bash
+claude plugin marketplace add aza9908/airl-skills
+```
 
-### Шаг 2. Откройте терминал
+**Шаг 3.** Вставьте вторую команду — она ставит сами навыки:
 
-В меню VS Code: **Terminal → New Terminal**. Внизу появится чёрное окно.
+```bash
+claude plugin install airl@airl-skills
+```
 
-### Шаг 3. Скопируйте одну команду
+Должно появиться `Successfully installed plugin: airl@airl-skills`.
+
+**Шаг 4.** Перезагрузите окно: **Cmd + Shift + P** (на Windows **Ctrl + Shift + P**),
+наберите `Developer: Reload Window`, нажмите Enter.
+
+**Шаг 5.** Проверьте. В панели Claude справа наберите:
+
+```
+/airl
+```
+
+Под полем появится список навыков с описаниями на русском. Выберите нужный —
+например `/airl:airl-spec`. Значит, всё готово.
+
+То же самое можно сделать без терминала, прямо в панели Claude: наберите `/plugins`,
+на вкладке Marketplaces добавьте `aza9908/airl-skills`, на вкладке Plugins
+установите `airl`.
+
+> **Как называются команды.** У навыков из плагина перед именем стоит имя плагина:
+> `/airl:airl-spec`, `/airl:airl-dwh`, `/airl:design`. В описаниях ниже они для
+> краткости записаны как `/airl-spec`, `/airl-dwh`, `/design`. Можно и вовсе без
+> команды: напишите Claude «запусти навык airl-spec».
+
+### Способ 2. Копирование файлов
+
+Подходит, если плагины в вашей версии недоступны. Нужен установленный
+[git](https://git-scm.com). В терминале VS Code:
 
 ```bash
 cd ~/Downloads && git clone https://github.com/aza9908/airl-skills.git && cd airl-skills && bash install.sh
 ```
 
-Вставьте её в терминал и нажмите Enter. Должно появиться:
+Должно появиться `Готово. Установлены навыки: …`. Затем перезагрузите окно
+(шаг 4 выше) и наберите в панели Claude `/airl-spec`. При этом способе команды
+короткие, без приставки: `/airl-spec`, `/design`.
 
-```
-Готово. Установлены навыки: airl-architecture-extra airl-cybersecurity airl-devops airl-dwh airl-hub airl-pwa airl-spec architecture design security
-```
-
-### Шаг 4. Перезагрузите окно
-
-Нажмите **Cmd + Shift + P** (на Windows **Ctrl + Shift + P**), наберите
-`Developer: Reload Window`, нажмите Enter. Окно моргнёт.
-
-Без этого шага навыки не появятся.
-
-### Шаг 5. Проверьте
-
-Откройте панель Claude справа и наберите в поле ввода:
-
-```
-/design
-```
-
-Или `/airl-spec`. Под полем должна появиться подсказка с описанием навыка на русском. Значит, всё готово.
+Ставьте одним способом, а не обоими: иначе каждый навык появится в списке дважды.
 
 ---
 
@@ -208,20 +223,25 @@ SECURITY.md        что проверили, что исправили, что 
 ## Если что-то не работает
 
 **Навыки не появились после установки.**
-Проверьте, что файлы на месте:
+Перезагрузите окно VS Code (шаг 4). Если не помогло, проверьте в терминале:
 
 ```bash
-ls ~/.claude/skills
+claude plugin list
 ```
 
-Должно вывести семь папок `airl-*` и `architecture`, `design`, `security`. Если пусто — повторите шаг 3.
-Если список есть, а навыков не видно — вы пропустили шаг 4, перезагрузите окно.
+Должна быть строка `airl@airl-skills` со статусом `enabled`. Её нет — повторите
+шаги 2 и 3.
 
-**Пишу `/design` в терминале, ничего не происходит.**
+**Ошибка `command not found: claude`.**
+Команда `claude` ставится вместе с Claude Code. Установите его по инструкции на
+[claude.com/claude-code](https://claude.com/claude-code) или добавьте плагин через
+панель Claude (`/plugins`), или воспользуйтесь способом 2.
+
+**Пишу `/airl` в терминале, ничего не происходит.**
 Навыки набираются в панели Claude справа, а не в чёрном терминале снизу.
 
-**Ошибка `command not found: git`.**
-Установите git с [git-scm.com](https://git-scm.com) и повторите шаг 3.
+**Ошибка `command not found: git`** (способ 2).
+Установите git с [git-scm.com](https://git-scm.com) и повторите команду.
 
 **Claude отвечает не на русском.**
 Напишите ему: «Отвечай на русском языке».
@@ -230,6 +250,18 @@ ls ~/.claude/skills
 
 ## Обновление
 
+Плагин (способ 1):
+
+```bash
+claude plugin marketplace update airl-skills
+```
+
+```bash
+claude plugin update airl@airl-skills
+```
+
+Копирование (способ 2):
+
 ```bash
 cd ~/Downloads/airl-skills && git pull && bash install.sh
 ```
@@ -237,6 +269,14 @@ cd ~/Downloads/airl-skills && git pull && bash install.sh
 И снова перезагрузите окно VS Code.
 
 ## Удаление
+
+Плагин (способ 1):
+
+```bash
+claude plugin uninstall airl@airl-skills
+```
+
+Копирование (способ 2):
 
 ```bash
 rm -rf ~/.claude/skills/design ~/.claude/skills/architecture ~/.claude/skills/security ~/.claude/skills/airl-*

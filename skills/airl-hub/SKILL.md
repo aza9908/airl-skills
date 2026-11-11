@@ -155,10 +155,10 @@ argument-hint: "[пусто — сам поймёт режим · «создат
 команды AIRL. Подключает к хабу команда AIRL — у неё доступ к серверу и прокси.
 
 1. Обнови копию карты `airl/COMPANY_MAP.md` из репозитория хаба, если есть доступ.
-2. Запусти файловую проверку (стандартный Python 3, скрипт лежит рядом с навыком):
+2. Запусти файловую проверку (стандартный Python 3; скрипт лежит в папке этого навыка, `scripts/check_service.py`):
 
 ```bash
-python3 ~/.claude/skills/airl-hub/scripts/check_service.py --service airl.service.json --map airl/COMPANY_MAP.md --files-only
+python3 "${CLAUDE_SKILL_DIR}/scripts/check_service.py" --service airl.service.json --map airl/COMPANY_MAP.md --files-only
 ```
 
 3. Пройди ворота 1–7 и 11–13 из таблицы ниже по файлам репозитория.
@@ -198,7 +198,7 @@ python3 ~/.claude/skills/airl-hub/scripts/check_service.py --service airl.servic
 3. **Живые ворота** скриптом:
 
 ```bash
-python3 ~/.claude/skills/airl-hub/scripts/check_service.py --service ../sales/airl.service.json --map COMPANY_MAP.md --registry hub/services.json --url https://hub.company.kz
+python3 "${CLAUDE_SKILL_DIR}/scripts/check_service.py" --service ../sales/airl.service.json --map COMPANY_MAP.md --registry hub/services.json --url https://hub.company.kz
 ```
 
    Код выхода 0 — зелено; 1 — есть красные; 3 — живые ворота проверены не

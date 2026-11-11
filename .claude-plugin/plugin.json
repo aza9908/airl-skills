@@ -1,0 +1,10 @@
+{
+  "name": "airl",
+  "version": "1.0.0",
+  "description": "Навыки AIRL: от рабочей задачи до боевого продукта. VibeOps (план, данные, защита, запуск, хаб руководителя) и «Первый продукт» (дизайн, архитектура, безопасность).",
+  "author": { "name": "AI Research Labs", "url": "https://airl.kz" },
+  "homepage": "https://github.com/aza9908/airl-skills",
+  "repository": "https://github.com/aza9908/airl-skills",
+  "license": "MIT",
+  "keywords": ["airl", "vibeops", "prd", "pwa", "security", "devops", "dwh"]
+}
