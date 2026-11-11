@@ -2,7 +2,7 @@
 -- 3000 вымышленных пациентов, рабочее время и записи за 150 дней и на неделю вперёд.
 
 INSERT INTO airl_settings (module, key, value, updated_by) VALUES
- ('appointments', 'org_name',           '"Orzu Medical"',  'demo'),
+ ('appointments', 'org_name',           '"Demo Clinic"',  'demo'),
  ('appointments', 'timezone',           '"Asia/Tashkent"', 'demo'),
  ('appointments', 'reminder_hours',     '[24, 2]',         'demo'),
  ('appointments', 'quiet_from',         '"21:00"',         'demo'),
