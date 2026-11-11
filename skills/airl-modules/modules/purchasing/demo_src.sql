@@ -53,7 +53,7 @@ INSERT INTO demo_pur_stock VALUES
  ('GR-BRA-CER',   'ROAST',  1350, now() - interval '2 hours'),
  ('GR-COL-HUI',   'ROAST',   260, now() - interval '2 hours'),
  ('PK-VALVE-250', 'ROAST',  3200, now() - interval '2 hours'),
- ('PK-BOX-12',    'ROAST',   140, now() - interval '2 hours'),
+ ('PK-BOX-12',    'ROAST',    60, now() - interval '2 hours'),
  ('SY-VAN-1L',    'RC-ALA',   84, now() - interval '2 hours'),
  ('SP-GASKET-58', 'RC-ALA',    3, now() - interval '2 hours')
 ON CONFLICT (sku, warehouse_id) DO NOTHING;
@@ -91,7 +91,7 @@ CREATE TABLE IF NOT EXISTS demo_pur_payments (
 );
 
 INSERT INTO demo_pur_payments VALUES
- ('PAY-7001', 'PO-000001', 9600.00,    'USD', now() - interval '40 days'),
+ ('PAY-7001', 'PO-000001', 8160.00,    'USD', now() - interval '40 days'),
  ('PAY-7002', 'PO-000002', 380000.00,  'KZT', now() - interval '20 days'),
  ('PAY-7003', 'PO-000003', 120000.00,  'KZT', now() - interval '5 days')
 ON CONFLICT (payment_id) DO NOTHING;

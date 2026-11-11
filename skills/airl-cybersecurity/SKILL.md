@@ -279,7 +279,7 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA mart_sales TO svc_s
 
 ## Отчёт SECURITY.md
 
-Если от старого `/security` уже есть `SECURITY.md` — не затирай историю: добавь
+Если от прошлой проверки уже есть `SECURITY.md` — не затирай историю: добавь
 сверху новый раздел с датой.
 
 ```markdown

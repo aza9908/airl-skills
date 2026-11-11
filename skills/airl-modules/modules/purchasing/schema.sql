@@ -227,6 +227,7 @@ BEGIN
         PERFORM pg_advisory_xact_lock(hashtextextended('purchasing:price:' || NEW.supplier_id || ':' || NEW.sku, 0));
         IF EXISTS (SELECT 1 FROM pur_prices p
                    WHERE p.supplier_id = NEW.supplier_id AND p.sku = NEW.sku AND p.kind = 'contract' AND p.id <> NEW.id
+                     AND p.valid_from <> NEW.valid_from          -- тот же ключ ловит UNIQUE (и ON CONFLICT)
                      AND daterange(p.valid_from, p.valid_to, '[]') && daterange(NEW.valid_from, NEW.valid_to, '[]')) THEN
             RAISE EXCEPTION 'purchasing: у % уже есть контрактная цена на % в эти даты — закройте старую (valid_to)', NEW.supplier_id, NEW.sku;
         END IF;
@@ -316,7 +317,7 @@ BEGIN
                 IF EXISTS (SELECT 1 FROM pur_order_lines l WHERE l.po_id = NEW.id AND NOT l.closed_short AND l.received_qty < l.qty) THEN
                     RAISE EXCEPTION 'purchasing: по заказу % пришло не всё — закройте недопоставку или ждите', NEW.po_no;
                 END IF;
-                NEW.received_at := now();
+                NEW.received_at := coalesce(NEW.received_at, now());
             WHEN 'partially_received' THEN NEW.received_at := NULL;
             WHEN 'closed' THEN
                 IF EXISTS (SELECT 1 FROM pur_receipts r JOIN pur_order_lines l ON l.id = r.po_line_id
@@ -595,7 +596,12 @@ BEGIN
              OR EXISTS (SELECT 1 FROM pur_order_lines l WHERE l.po_id = po.id AND l.closed_short) THEN 'partially_received'
         ELSE po.status END;
     IF v_new IS DISTINCT FROM po.status THEN
-        UPDATE pur_orders SET status = v_new, updated_by = p_actor WHERE id = po.id;
+        UPDATE pur_orders
+        SET status = v_new, updated_by = p_actor,
+            received_at = CASE WHEN v_new = 'received' THEN
+                (SELECT max(r.received_at) FROM pur_receipts r JOIN pur_order_lines l ON l.id = r.po_line_id
+                 WHERE l.po_id = po.id AND r.status <> 'qc_rejected') END
+        WHERE id = po.id;
     END IF;
     RETURN v_new;
 END $$;
