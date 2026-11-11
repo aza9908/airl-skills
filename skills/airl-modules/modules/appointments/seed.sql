@@ -28,7 +28,7 @@ SELECT 'P-' || lpad(n::text, 6, '0'),
            || ' ' || substr('АБВГДЗИКЛМНОРСТУФХШЮЯ', 1 + (n * 7) % 21, 1) || '.',
        '+99890' || lpad((((n - (n % 50 = 0)::int) * 7919) % 10000000)::text, 7, '0'),
        date '1950-01-01' + (n * 137) % 25000,
-       CASE WHEN n % 97 = 0 THEN 'kk' WHEN n % 3 = 1 THEN 'ru' ELSE 'uz' END,
+       CASE WHEN n % 97 = 0 THEN 'uz-Cyrl' WHEN n % 3 = 1 THEN 'ru' ELSE 'uz' END,
        CASE WHEN n % 10 < 7 THEN 500000000 + n END,
        now() - interval '200 days', 'reception_1'
 FROM generate_series(1, 3000) AS n
@@ -113,4 +113,4 @@ WHERE a.status = 'done' AND a.resource_id IN ('DR-CRD-1', 'DR-NEU-1')
   AND a.starts_at > now() - interval '45 days' AND a.id % 3 = 0
 ON CONFLICT (customer_id, due_date, reason) DO NOTHING;
 
-DO $$ BEGIN PERFORM apt_plan_reminders(); END $$;
+DO $$ BEGIN PERFORM apt_sync_from_mis(); PERFORM apt_plan_reminders(); END $$;

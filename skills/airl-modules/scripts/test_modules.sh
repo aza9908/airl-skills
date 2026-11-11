@@ -38,6 +38,7 @@ SQL
   }
 
   psql "$DATABASE_URL" -q -X -v ON_ERROR_STOP=1 -c "DROP SCHEMA IF EXISTS $schema CASCADE; CREATE SCHEMA $schema;" >/dev/null
+  out=""; out2=""
   if ! out=$(run 2>&1) || ! out2=$(run 2>&1); then
     echo "✖ $m: установка не прошла"; echo "$out$out2" | tail -5; fail=1; continue
   fi

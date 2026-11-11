@@ -147,3 +147,11 @@ SELECT 'qc_unchecked_overdue'::text AS metric_id,
        'шт'::text AS unit,
        airl_traffic(count(*) FILTER (WHERE overdue), 1, 4, false) AS status
 FROM v_insp_pending;
+
+-- Экран «Действия»: корректирующие и предупреждающие действия, просроченные сверху.
+CREATE OR REPLACE VIEW v_insp_actions AS
+SELECT a.id, a.kind, a.description, a.owner, a.due_date, a.status, a.done_at,
+       c.check_no, c.object_id,
+       (a.status = 'open' AND a.due_date < current_date) AS overdue
+FROM insp_actions a
+LEFT JOIN insp_checks c ON c.id = a.check_id;

@@ -225,7 +225,7 @@ WITH s AS (
 SELECT 'at_risk_revenue'::text AS metric_id,
        to_char(current_date, 'YYYY-MM-DD') AS period,
        s.v AS value,
-       (airl_setting('churn-risk', 'currency', '"KZT"') #>> '{}')::text AS unit,
+       (airl_setting('churn-risk', 'currency', airl_setting('kit', 'currency', '"KZT"')) #>> '{}')::text AS unit,
        airl_traffic(round(100.0 * s.v / NULLIF(s.base, 0), 1),
            (airl_setting('churn-risk', 'revenue_share_warn', '5'))::text::numeric,
            (airl_setting('churn-risk', 'revenue_share_bad', '10'))::text::numeric,

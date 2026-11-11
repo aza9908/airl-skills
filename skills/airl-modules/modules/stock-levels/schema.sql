@@ -291,7 +291,7 @@ WITH t AS (
 SELECT 'slow_movers_value'::text AS metric_id,
        to_char(current_date, 'YYYY-MM-DD') AS period,
        (CASE WHEN t.priced > 0 THEN coalesce(t.slow_value, 0) ELSE t.slow_count END)::numeric AS value,
-       (CASE WHEN t.priced > 0 THEN airl_setting('stock-levels', 'currency', '"KZT"') #>> '{}' ELSE 'поз.' END)::text AS unit,
+       (CASE WHEN t.priced > 0 THEN airl_setting('stock-levels', 'currency', airl_setting('kit', 'currency', '"KZT"')) #>> '{}' ELSE 'поз.' END)::text AS unit,
        (CASE WHEN t.priced > 0 THEN
             airl_traffic(round(100 * coalesce(t.slow_value, 0) / NULLIF(t.total_value, 0), 2),
                 (airl_setting('stock-levels', 'slow_share_warn', '10'))::text::numeric,

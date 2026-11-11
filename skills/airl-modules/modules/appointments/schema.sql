@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS apt_customers (
     display_name       text        NOT NULL,                -- как обращаться (ПДн)
     phone              text        CHECK (phone ~ '^\+[0-9]{10,15}$'),   -- международный формат (ПДн)
     birth_date         date,                                -- ПДн, чтобы различать членов семьи
-    preferred_language text        NOT NULL DEFAULT 'ru' CHECK (preferred_language IN ('ru', 'uz', 'kk')),
+    preferred_language text        NOT NULL DEFAULT 'ru' CHECK (preferred_language IN ('ru', 'uz', 'uz-Cyrl', 'kk')),  -- uz = узбекская латиница
     telegram_user_id   bigint,                              -- после того как пациент сам поделился контактом
     external_id        text,                                -- id в МИС, если есть
     archived           boolean     NOT NULL DEFAULT false,
@@ -32,6 +32,10 @@ CREATE TABLE IF NOT EXISTS apt_consents (
     consent_version text        NOT NULL,                   -- версия текста согласия
     given_at        timestamptz NOT NULL DEFAULT now(),
     source          text        NOT NULL CHECK (source IN ('telegram_bot', 'reception', 'paper', 'site')),
+    given_by        text        NOT NULL DEFAULT 'self' CHECK (given_by IN ('self', 'representative')),
+    representative_name     text,                       -- законный представитель (родитель), ПДн
+    representative_relation text,                       -- мать, отец, опекун
+    CHECK (given_by = 'self' OR representative_name IS NOT NULL),
     created_at      timestamptz NOT NULL DEFAULT now(),
     created_by      text        NOT NULL,
     updated_at      timestamptz,
@@ -64,7 +68,8 @@ CREATE TABLE IF NOT EXISTS apt_appointments (
     status        text        NOT NULL DEFAULT 'booked'
                   CHECK (status IN ('booked', 'confirmed', 'arrived', 'done', 'no_show',
                                     'cancelled_by_patient', 'cancelled_by_clinic')),
-    source        text        NOT NULL CHECK (source IN ('phone', 'telegram', 'walk_in', 'site')),
+    source        text        NOT NULL CHECK (source IN ('phone', 'telegram', 'walk_in', 'site', 'import')),
+    external_id   text        UNIQUE,                   -- id визита в МИС (режим mis_mirror)
     confirmed_at  timestamptz,
     arrived_at    timestamptz,
     cancelled_at  timestamptz,
@@ -134,10 +139,11 @@ CREATE TRIGGER apt_consents_readonly BEFORE UPDATE OR DELETE ON apt_consents FOR
 -- на пересекающееся время. Блокировка по врачу — от одновременной записи из бота и регистратуры.
 CREATE OR REPLACE FUNCTION apt_no_overlap() RETURNS trigger LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
 BEGIN
-    IF NEW.status IN ('booked', 'confirmed', 'arrived', 'done', 'no_show') THEN
+    -- Записи из МИС не проверяем: там своя логика расписания, МИС — источник правды.
+    IF NEW.source <> 'import' AND NEW.status IN ('booked', 'confirmed', 'arrived', 'done', 'no_show') THEN
         PERFORM pg_advisory_xact_lock(hashtext('appointments:' || NEW.resource_id));
         IF EXISTS (SELECT 1 FROM apt_appointments a
-                   WHERE a.resource_id = NEW.resource_id AND a.appt_no <> NEW.appt_no
+                   WHERE a.resource_id = NEW.resource_id AND a.appt_no <> NEW.appt_no AND a.source <> 'import'
                      AND a.status IN ('booked', 'confirmed', 'arrived', 'done', 'no_show')
                      AND a.starts_at > NEW.starts_at - interval '1 day'
                      AND a.starts_at < NEW.ends_at AND a.ends_at > NEW.starts_at) THEN
@@ -154,12 +160,12 @@ CREATE TRIGGER apt_appointments_overlap BEFORE INSERT OR UPDATE OF starts_at, en
 CREATE OR REPLACE FUNCTION apt_status_guard() RETURNS trigger LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
 BEGIN
     IF NEW.status IS DISTINCT FROM OLD.status THEN
-        IF NOT ((OLD.status = 'booked'    AND NEW.status IN ('confirmed', 'arrived', 'no_show', 'cancelled_by_patient', 'cancelled_by_clinic'))
+        IF NEW.source <> 'import' AND NOT ((OLD.status = 'booked'    AND NEW.status IN ('confirmed', 'arrived', 'no_show', 'cancelled_by_patient', 'cancelled_by_clinic'))
              OR (OLD.status = 'confirmed' AND NEW.status IN ('arrived', 'no_show', 'cancelled_by_patient', 'cancelled_by_clinic'))
              OR (OLD.status = 'arrived'   AND NEW.status = 'done')) THEN
             RAISE EXCEPTION 'appointments: переход % → % не разрешён', OLD.status, NEW.status;
         END IF;
-        IF NEW.status = 'no_show' AND now() < NEW.starts_at THEN
+        IF NEW.source <> 'import' AND NEW.status = 'no_show' AND now() < NEW.starts_at THEN
             RAISE EXCEPTION 'appointments: «не пришёл» можно отметить только после начала приёма';
         END IF;
         CASE NEW.status
@@ -172,7 +178,8 @@ BEGIN
             UPDATE airl_notifications
             SET cancelled_at = now(), error = 'cancelled: appointment ' || NEW.status
             WHERE module = 'appointments' AND sent_at IS NULL AND cancelled_at IS NULL
-              AND dedup_key LIKE 'appointments:remind%:' || NEW.id || ':%';
+              AND (dedup_key LIKE 'appointments:remind%:' || NEW.id || ':%'
+                   OR dedup_key LIKE 'appointments:booked:' || NEW.id || ':%');
         END IF;
         INSERT INTO airl_audit (actor, module, entity, entity_id, action, from_status, to_status, comment)
         VALUES (coalesce(NEW.updated_by, 'system'), 'appointments', 'apt_appointments', NEW.id::text,
@@ -313,70 +320,155 @@ WHERE n.module = 'appointments' AND n.dedup_key LIKE 'appointments:remind%';
 -- Только тем, у кого есть согласие на обработку и на Telegram. Тихие часы: первое
 -- напоминание сдвигается на утро, остальные в тихие часы не отправляются.
 -- Текст — только время и организация. Запускать каждые 15 минут; дублей не будет.
+-- Текст сообщения: шаблон из настроек (template_<вид>_<язык>) или встроенный.
+-- В тексте только название организации, имя (если на один Telegram записано
+-- несколько человек), дата и время. Ни врача, ни специальности, ни диагноза.
+-- Тексты на узбекском и казахском перед запуском проверяет носитель языка.
+CREATE OR REPLACE FUNCTION apt_message(p_kind text, p_lang text, p_name text, p_at timestamptz)
+RETURNS text LANGUAGE plpgsql STABLE SET search_path FROM CURRENT AS $$
+DECLARE
+    tz   text := airl_setting('appointments', 'timezone', '"Asia/Tashkent"') #>> '{}';
+    org  text := coalesce(airl_setting('appointments', 'org_name_' || p_lang, 'null') #>> '{}',
+                          airl_setting('appointments', 'org_name', '"Клиника"') #>> '{}');
+    tpl  text := airl_setting('appointments', 'template_' || p_kind || '_' || p_lang, 'null') #>> '{}';
+BEGIN
+    IF tpl IS NULL THEN
+        tpl := CASE p_kind || ':' || p_lang
+            WHEN 'remind:uz'      THEN '{org}: {name}{date} kuni soat {time} da qabulga yozilgansiz. Kelasizmi?'
+            WHEN 'remind:uz-Cyrl' THEN '{org}: {name}{date} куни соат {time} да қабулга ёзилгансиз. Келасизми?'
+            WHEN 'remind:kk'      THEN '{org}: {name}{date} күні сағат {time} қабылдауға жазылдыңыз. Келесіз бе?'
+            WHEN 'booked:uz'      THEN '{org}: {name}{date} kuni soat {time} ga yozildingiz. Rejangiz oʻzgarsa, «Bekor qilish» yoki «Koʻchirish» tugmasini bosing.'
+            WHEN 'booked:uz-Cyrl' THEN '{org}: {name}{date} куни соат {time} га ёзилдингиз. Режангиз ўзгарса, «Бекор қилиш» ёки «Кўчириш» тугмасини босинг.'
+            WHEN 'booked:kk'      THEN '{org}: {name}{date} күні сағат {time} жазылдыңыз. Жоспарыңыз өзгерсе, «Болдырмау» немесе «Ауыстыру» батырмасын басыңыз.'
+            WHEN 'booked:ru'      THEN '{org}: {name}вы записаны на {date} в {time}. Если планы изменятся, нажмите «Отменить» или «Перенести».'
+            ELSE                       '{org}: {name}вы записаны на {date} в {time}. Придёте?'
+        END;
+    END IF;
+    RETURN replace(replace(replace(replace(tpl,
+        '{org}', org),
+        '{name}', CASE WHEN p_name IS NULL THEN '' ELSE p_name || ', ' END),
+        '{date}', to_char(p_at AT TIME ZONE tz, 'DD.MM')),
+        '{time}', to_char(p_at AT TIME ZONE tz, 'HH24:MI'));
+END $$;
+
+-- Планирование сообщений. Запускать раз в 5–15 минут.
+-- 1) Подтверждение сразу после записи, если запись сделана позже, чем за первое
+--    напоминание (иначе запись «вечером на утро» осталась бы без сообщений).
+-- 2) Напоминания за reminder_hours (по умолчанию 24 и 2). Попало на тихие часы —
+--    переносится на конец тихих часов, если до приёма ещё больше часа, иначе на
+--    вечер перед тихими часами. Два напоминания ближе 3 часов друг к другу не шлются.
 CREATE OR REPLACE FUNCTION apt_plan_reminders() RETURNS int LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
 DECLARE
     tz      text := airl_setting('appointments', 'timezone', '"Asia/Tashkent"') #>> '{}';
     qs      time := (airl_setting('appointments', 'quiet_from', '"21:00"') #>> '{}')::time;
     qe      time := (airl_setting('appointments', 'quiet_to', '"09:00"') #>> '{}')::time;
-    org     text := airl_setting('appointments', 'org_name', '"Клиника"') #>> '{}';
     hrs     int[] := ARRAY(SELECT jsonb_array_elements_text(airl_setting('appointments', 'reminder_hours', '[24, 2]'))::int ORDER BY 1 DESC);
     first_h int;
     r       record;
     h       int;
     t       timestamptz;
     lt      timestamp;
+    d       date;
     quiet   boolean;
-    txt     text;
+    nm      text;
     n       int := 0;
     k       int;
 BEGIN
     first_h := hrs[1];
     FOR r IN
-        SELECT a.id, a.customer_id, a.starts_at, a.created_at, c.telegram_user_id, c.preferred_language
+        SELECT a.id, a.customer_id, a.starts_at, a.created_at, c.telegram_user_id, c.preferred_language,
+               CASE WHEN (SELECT count(*) FROM apt_customers c2
+                          WHERE c2.telegram_user_id = c.telegram_user_id AND NOT c2.archived) > 1
+                    THEN c.display_name END AS shared_name
         FROM apt_appointments a
         JOIN apt_customers c ON c.id = a.customer_id
         JOIN v_apt_consent_current k ON k.customer_id = a.customer_id AND k.can_message_telegram
         WHERE a.status IN ('booked', 'confirmed')
           AND a.starts_at > now() AND a.starts_at <= now() + make_interval(hours => first_h + 24)
     LOOP
+        nm := r.shared_name;
+        -- 1) подтверждение для поздней записи
+        IF r.created_at > r.starts_at - make_interval(hours => first_h) AND r.created_at > now() - interval '1 day' THEN
+            INSERT INTO airl_notifications (dedup_key, module, channel, recipient, text, not_before)
+            VALUES ('appointments:booked:' || r.id || ':' || r.customer_id, 'appointments', 'telegram',
+                    r.telegram_user_id::text, apt_message('booked', r.preferred_language, nm, r.starts_at), now())
+            ON CONFLICT (dedup_key) DO NOTHING;
+            GET DIAGNOSTICS k = ROW_COUNT; n := n + k;
+        END IF;
+        -- 2) напоминания
         FOREACH h IN ARRAY hrs LOOP
             t  := r.starts_at - make_interval(hours => h);
+            IF t < r.created_at THEN CONTINUE; END IF;
             lt := t AT TIME ZONE tz;
             quiet := CASE WHEN qs > qe THEN lt::time >= qs OR lt::time < qe
                           ELSE lt::time >= qs AND lt::time < qe END;
             IF quiet THEN
-                IF h <> first_h THEN CONTINUE; END IF;
-                lt := (CASE WHEN lt::time >= qs AND qs > qe THEN lt::date + 1 ELSE lt::date END) + qe;
-                t  := lt AT TIME ZONE tz;
-                IF t > r.starts_at - interval '3 hours' THEN CONTINUE; END IF;
+                d  := CASE WHEN qs > qe AND lt::time < qe THEN lt::date ELSE
+                          CASE WHEN qs > qe THEN lt::date + 1 ELSE lt::date END END;
+                t  := (d + qe) AT TIME ZONE tz;                       -- конец тихих часов
+                IF t > r.starts_at - interval '1 hour' THEN
+                    d := CASE WHEN qs > qe AND lt::time < qe THEN lt::date - 1 ELSE lt::date END;
+                    t := (d + qs - interval '30 minutes') AT TIME ZONE tz;   -- вечер перед тихими часами
+                    IF t < r.created_at OR t >= r.starts_at THEN CONTINUE; END IF;
+                END IF;
             END IF;
-            IF t < r.created_at OR t < now() - interval '1 hour' THEN CONTINUE; END IF;
-            txt := CASE r.preferred_language
-                WHEN 'uz' THEN org || ': siz ' || to_char(r.starts_at AT TIME ZONE tz, 'DD.MM') || ' kuni soat '
-                               || to_char(r.starts_at AT TIME ZONE tz, 'HH24:MI') || ' da qabulga yozilgansiz. Kelasizmi?'
-                WHEN 'kk' THEN org || ': сіз ' || to_char(r.starts_at AT TIME ZONE tz, 'DD.MM') || ' күні сағат '
-                               || to_char(r.starts_at AT TIME ZONE tz, 'HH24:MI') || ' қабылдауға жазылдыңыз. Келесіз бе?'
-                ELSE           org || ': вы записаны на ' || to_char(r.starts_at AT TIME ZONE tz, 'DD.MM') || ' в '
-                               || to_char(r.starts_at AT TIME ZONE tz, 'HH24:MI') || '. Придёте?'
-            END;
+            IF t < now() - interval '1 hour' THEN CONTINUE; END IF;
+            IF EXISTS (SELECT 1 FROM airl_notifications x
+                       WHERE x.module = 'appointments' AND x.cancelled_at IS NULL
+                         AND (x.dedup_key LIKE 'appointments:remind%:' || r.id || ':%'
+                              OR x.dedup_key LIKE 'appointments:booked:' || r.id || ':%')
+                         AND x.dedup_key <> 'appointments:remind' || h || ':' || r.id || ':' || r.customer_id
+                         AND abs(extract(epoch FROM x.not_before - t)) < 3 * 3600) THEN
+                CONTINUE;
+            END IF;
             INSERT INTO airl_notifications (dedup_key, module, channel, recipient, text, not_before)
             VALUES ('appointments:remind' || h || ':' || r.id || ':' || r.customer_id, 'appointments', 'telegram',
-                    r.telegram_user_id::text, txt, t)
+                    r.telegram_user_id::text, apt_message('remind', r.preferred_language, nm, r.starts_at), t)
             ON CONFLICT (dedup_key) DO NOTHING;
-            GET DIAGNOSTICS k = ROW_COUNT;
-            n := n + k;
+            GET DIAGNOSTICS k = ROW_COUNT; n := n + k;
         END LOOP;
     END LOOP;
     RETURN n;
 END $$;
 
+-- Режим mis_mirror: записи ведутся в МИС клиники, модуль только напоминает
+-- и считает показатели. Загрузка визитов из src_apt_mis_visits (адаптер /airl-dwh).
+-- Пациенты создаются по id МИС; согласия и Telegram — по-прежнему в модуле.
+CREATE OR REPLACE FUNCTION apt_sync_from_mis() RETURNS int LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+DECLARE n int := 0; k int;
+BEGIN
+    INSERT INTO apt_customers (customer_no, display_name, phone, birth_date, external_id, created_by)
+    SELECT DISTINCT ON (v.patient_id) 'MIS-' || v.patient_id, v.patient_name, v.phone, v.birth_date, v.patient_id, 'mis_sync'
+    FROM src_apt_mis_visits v
+    WHERE NOT EXISTS (SELECT 1 FROM apt_customers c WHERE c.external_id = v.patient_id)
+    ON CONFLICT (customer_no) DO NOTHING;
+
+    INSERT INTO apt_appointments (appt_no, external_id, customer_id, resource_id, starts_at, ends_at, status, source,
+                                  cancelled_at, cancel_reason, created_by)
+    SELECT 'MIS-' || v.visit_id, v.visit_id, c.id, v.resource_id, v.starts_at, v.ends_at,
+           CASE v.status WHEN 'cancelled' THEN 'cancelled_by_patient' ELSE v.status END, 'import',
+           CASE WHEN v.status = 'cancelled' THEN coalesce(v.cancelled_at, now()) END,
+           CASE WHEN v.status = 'cancelled' THEN 'other' END, 'mis_sync'
+    FROM src_apt_mis_visits v
+    JOIN apt_customers c ON c.external_id = v.patient_id
+    ON CONFLICT (external_id) DO UPDATE
+       SET starts_at = EXCLUDED.starts_at, ends_at = EXCLUDED.ends_at, resource_id = EXCLUDED.resource_id,
+           status = EXCLUDED.status, cancelled_at = EXCLUDED.cancelled_at, cancel_reason = EXCLUDED.cancel_reason,
+           updated_by = 'mis_sync'
+       WHERE (apt_appointments.starts_at, apt_appointments.status) IS DISTINCT FROM (EXCLUDED.starts_at, EXCLUDED.status);
+    GET DIAGNOSTICS k = ROW_COUNT; n := n + k;
+    RETURN n;
+END $$;
+
 -- Показатель: доля неявок по неделе приёма (местное время).
 -- Знаменатель: пришёл, принят, не пришёл, а также отмены пациентом позже чем за
--- late_cancel_hours часов (0 — поздние отмены не считаются). Будущие и неотмеченные не считаются.
+-- late_cancel_hours часов (по умолчанию 2; 0 — поздние отмены не считаются). Будущие не считаются.
+-- Неотмеченные прошедшие записи сюда не попадают — их видно в v_apt_unmarked: пока
+-- там есть строки, доля неявок занижена.
 CREATE OR REPLACE VIEW m_no_show_rate AS
 WITH cfg AS (
     SELECT airl_setting('appointments', 'timezone', '"Asia/Tashkent"') #>> '{}' AS tz,
-           (airl_setting('appointments', 'late_cancel_hours', '0'))::text::int AS late_h
+           (airl_setting('appointments', 'late_cancel_hours', '2'))::text::int AS late_h
 ), base AS (
     SELECT to_char(a.starts_at AT TIME ZONE cfg.tz, 'IYYY-"W"IW') AS week,
            (a.status = 'no_show'
@@ -439,3 +531,10 @@ SELECT 'return_rate_90d'::text AS metric_id,
 FROM cohort c
 WHERE (c.month + interval '1 month' + interval '90 days')::date <= current_date
 GROUP BY c.month;
+
+-- Прошедшие записи без отметки «пришёл» или «не пришёл». Пока они есть, доля неявок
+-- занижена: регистратура закрывает день, отмечая каждую запись.
+CREATE OR REPLACE VIEW v_apt_unmarked AS
+SELECT a.id, a.appt_no, a.resource_id, a.starts_at, a.status, a.source
+FROM apt_appointments a
+WHERE a.status IN ('booked', 'confirmed') AND a.ends_at < now() - interval '2 hours';

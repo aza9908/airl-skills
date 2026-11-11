@@ -85,7 +85,7 @@ SELECT d.doc_no, d.doc_date, d.client_id,
              WHEN current_date - e.due <= 60 THEN '31-60'
              WHEN current_date - e.due <= 90 THEN '61-90'
              ELSE '90+' END)::text AS bucket,
-       (d.currency = (airl_setting('receivables', 'currency', '"KZT"') #>> '{}')) AS in_main_currency
+       (d.currency = (airl_setting('receivables', 'currency', airl_setting('kit', 'currency', '"KZT"')) #>> '{}')) AS in_main_currency
 FROM src_receivables_docs d
 LEFT JOIN src_rcv_clients c ON c.client_id = d.client_id
 CROSS JOIN LATERAL (
@@ -211,7 +211,7 @@ FROM v_rcv_docs WHERE NOT in_main_currency
 UNION ALL
 SELECT 'no_credit_limit', 'warning',
        'У клиента есть долг, но не задан кредитный лимит',
-       a.client_id, a.client_name, a.manager_id, NULL::text, NULL::date, a.open_total, (airl_setting('receivables', 'currency', '"KZT"') #>> '{}')::char(3)
+       a.client_id, a.client_name, a.manager_id, NULL::text, NULL::date, a.open_total, (airl_setting('receivables', 'currency', airl_setting('kit', 'currency', '"KZT"')) #>> '{}')::char(3)
 FROM v_rcv_aging a WHERE a.credit_limit IS NULL AND NOT a.is_aggregator AND a.open_total > 0;
 
 -- Журнал действий по взысканию.
@@ -233,7 +233,7 @@ WITH s AS (
 SELECT 'receivables_overdue'::text AS metric_id,
        to_char(current_date, 'YYYY-MM-DD') AS period,
        s.v AS value,
-       (airl_setting('receivables', 'currency', '"KZT"') #>> '{}')::text AS unit,
+       (airl_setting('receivables', 'currency', airl_setting('kit', 'currency', '"KZT"')) #>> '{}')::text AS unit,
        airl_traffic(s.v,
            (airl_setting('receivables', 'overdue_warn', '3000000'))::text::numeric,
            (airl_setting('receivables', 'overdue_bad', '10000000'))::text::numeric,

@@ -28,7 +28,7 @@ import airl_ai_common as ai  # noqa: E402
 
 SEVERITY = {"danger": 0, "warning": 1, "ok": 2}
 
-SYSTEM = """Ты пишешь утреннюю сводку для руководителя компании «{company}» на языке: {language}.
+SYSTEM = """Ты пишешь сводку ({period}) для руководителя компании «{company}» на языке: {language}.
 
 Правила, без исключений:
 - Используй только факты из блока FACTS. Не добавляй других чисел: ни сумм, ни процентов,
@@ -41,10 +41,27 @@ SYSTEM = """Ты пишешь утреннюю сводку для руково�
 - Числа пиши так же, как в поле display у факта."""
 
 
+REQUIRED_COLUMNS = ["metric_id", "period", "value", "unit", "status"]
+
+HEADERS = {
+    "русский": ("сводка", "за", "изменение", "к", "Сводка без ИИ"),
+    "o'zbekcha": ("hisobot", "davr", "oʻzgarish", "ga nisbatan", "Sunʼiy intellektsiz hisobot"),
+    "узбекский": ("hisobot", "davr", "oʻzgarish", "ga nisbatan", "Sunʼiy intellektsiz hisobot"),
+    "ўзбекча": ("ҳисобот", "давр", "ўзгариш", "га нисбатан", "Сунъий интеллектсиз ҳисобот"),
+    "казахский": ("шолу", "кезең", "өзгеріс", "салыстырғанда", "ЖИ-сіз шолу"),
+}
+
+
 def collect(conf, conn):
     facts = []
     for src in conf["sources"]:
-        rows = ai.fetch(conn, src["sql"], limit=50)
+        with conn.cursor() as cur:
+            cur.execute(src["sql"])
+            cols = [c.name for c in cur.description]
+            if cols != REQUIRED_COLUMNS:
+                raise SystemExit(f"Источник «{src['name']}» возвращает колонки {cols}. Сводка читает только "
+                                 f"показатели с колонками {REQUIRED_COLUMNS} — представления m_<…> или схему metrics.")
+            rows = [dict(zip(cols, r)) for r in cur.fetchmany(50)]
         by_metric = {}
         for r in rows:
             by_metric.setdefault(r["metric_id"], []).append(r)
@@ -86,21 +103,25 @@ def number_pool(facts, today):
 
 
 def template_digest(conf, facts, today, note=None):
-    lines = [f"{conf['company']} · сводка на {today.strftime('%d.%m.%Y')}"]
+    word, per, chg, to, no_ai = HEADERS.get(conf.get("language", "русский").lower(), HEADERS["русский"])
+    period = conf.get("period")
+    title = f"{conf['company']} · {word}" + (f" ({period})" if period else "") + f" · {today.strftime('%d.%m.%Y')}"
+    lines = [title]
     for f in sorted(facts, key=lambda f: SEVERITY.get(f["status"], 1)):
         mark = {"danger": "🔴", "warning": "🟡", "ok": "🟢"}.get(f["status"], "•")
-        line = f"{mark} {f['title']} ({f['source']}): {f['display']} за {f['period']}"
+        line = f"{mark} {f['title']} ({f['source']}): {f['display']} · {per} {f['period']}"
         if "change_display" in f:
-            line += f", изменение {f['change_display']} к {f['previous_period']}"
+            line += f", {chg} {f['change_display']} {to} {f['previous_period']}"
         lines.append(line)
     if note:
-        lines.append(note)
+        lines.append(f"{no_ai}: {note}")
     return "\n".join(lines)
 
 
 def write_with_model(client, conf, facts, today):
     numbered = [{"id": f"F{i}", **f} for i, f in enumerate(facts, 1)]
     system = SYSTEM.format(company=conf["company"], language=conf.get("language", "русский"),
+                           period=conf.get("period", "день"),
                            max_lines=conf.get("max_lines", 12))
     user = ("Сегодня " + today.isoformat() + ".\nFACTS:\n" +
             json.dumps(numbered, ensure_ascii=False, indent=1))
@@ -152,7 +173,7 @@ def main():
     else:
         text, problem = write_with_model(ai.make_client(), conf, facts, today)
         if text is None:
-            text = template_digest(conf, facts, today, note="Сводка без ИИ: " + problem)
+            text = template_digest(conf, facts, today, note=problem)
             how = "шаблон (" + problem + ")"
         else:
             how = "модель, числа сверены"

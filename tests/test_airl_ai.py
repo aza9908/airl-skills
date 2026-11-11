@@ -86,7 +86,7 @@ def test_digest_invented_twice_falls_back():
     text, problem = digest.write_with_model(c, CONF, FACTS, digest.dt.date(2026, 11, 11))
     assert text is None and "не сошлись" in problem
     tpl = digest.template_digest({"company": "STEP COFFEE"}, FACTS, digest.dt.date(2026, 11, 11), note=problem)
-    assert tpl.splitlines()[1].startswith("🔴") and "7,5%" in tpl
+    assert tpl.splitlines()[1].startswith("🔴") and "7,5%" in tpl and "Сводка без ИИ" in tpl
 
 
 def test_digest_refusal_falls_back():
