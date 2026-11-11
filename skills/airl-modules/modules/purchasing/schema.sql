@@ -398,7 +398,7 @@ WITH cfg AS (
     WHERE c.s > 0
 ), calc AS (
     SELECT b.*,
-           round(CASE WHEN b.method = 'stddev' THEN b.z * b.sd_daily * sqrt(b.lead_time_days) ELSE b.safety_days * b.avg_daily END, 3) AS safety_stock,
+           round(CASE WHEN b.method = 'stddev' THEN b.z * b.sd_daily * sqrt(b.lead_time_days::numeric) ELSE b.safety_days * b.avg_daily END, 3) AS safety_stock,
            (b.on_hand + b.on_order + b.requested) AS position
     FROM base b
 ), rop AS (
@@ -727,7 +727,6 @@ END $$;
 
 -- ───────────── Экраны ─────────────
 
--- «Поставщики»: справочник с условиями, контрактом и надёжностью за 90 дней.
 -- Прогресс строки заказа: когда набрано заказанное количество (без брака QC).
 CREATE OR REPLACE VIEW v_pur_line_progress AS
 WITH rc AS (
@@ -744,6 +743,7 @@ SELECT l.id AS po_line_id, l.po_id, o.po_no, o.supplier_id, o.warehouse_id, o.cu
 FROM pur_order_lines l
 JOIN pur_orders o ON o.id = l.po_id;
 
+-- «Поставщики»: справочник с условиями, контрактом и надёжностью за 90 дней.
 CREATE OR REPLACE VIEW v_pur_suppliers AS
 WITH tz AS (SELECT airl_setting('purchasing', 'timezone', '"Asia/Almaty"') #>> '{}' AS name),
 rel AS (
