@@ -22,9 +22,9 @@ SELECT v.sku || '|' || v.wh || '|' || coalesce(v.batch, '-'), v.sku, v.name, v.w
        CASE WHEN v.exp_days IS NULL THEN NULL ELSE current_date + v.exp_days END,
        v.cost, 'KZT', now() - interval '2 hours'
 FROM (VALUES
- ('CF-ESP-1KG',  'STEP Espresso Blend 1 кг',        'RC-ALA', 'PR-1001', 160::numeric, 'шт', 150, 9800.00),
- ('CF-ESP-1KG',  'STEP Espresso Blend 1 кг',        'RC-ALA', 'PR-1002',  40,          'шт', 170, 9800.00),
- ('CF-ESP-1KG',  'STEP Espresso Blend 1 кг',        'TK-AST', 'PR-0990',  18,          'шт', 120, 9800.00),
+ ('CF-ESP-1KG',  'Espresso Blend 1 кг',        'RC-ALA', 'PR-1001', 160::numeric, 'шт', 150, 9800.00),
+ ('CF-ESP-1KG',  'Espresso Blend 1 кг',        'RC-ALA', 'PR-1002',  40,          'шт', 170, 9800.00),
+ ('CF-ESP-1KG',  'Espresso Blend 1 кг',        'TK-AST', 'PR-0990',  18,          'шт', 120, 9800.00),
  ('CF-ETH-250',  'Эфиопия Сидамо 250 г',            'RC-ALA', 'PR-1003',  95,          'шт', 160, 3900.00),
  ('CF-ETH-250',  'Эфиопия Сидамо 250 г',            'TK-AST', 'PR-0995',  70,          'шт', 140, 3900.00),
  ('CF-COL-250',  'Колумбия Уила 250 г',             'RC-ALA', 'PR-1004',  12,          'шт', 165, 3600.00),
@@ -37,7 +37,7 @@ FROM (VALUES
  ('SY-LAV-1L',   'Сироп лаванда 1 л',               'RC-ALA', 'SL-0402',   38,         'шт',  25, 2600.00),
  ('ML-OAT-1L',   'Овсяное молоко 1 л',              'RC-ALA', 'MO-1020',   30,         'шт',   9, 1350.00),
  ('ML-OAT-1L',   'Овсяное молоко 1 л',              'RC-ALA', 'MO-0930',    6,         'шт',  -3, 1350.00),
- ('MG-STEP-350', 'Кружка STEP 350 мл',              'TK-AST', NULL,        140,        'шт', NULL, 1900.00)
+ ('MG-LOGO-350', 'Кружка фирменная 350 мл',              'TK-AST', NULL,        140,        'шт', NULL, 1900.00)
 ) AS v(sku, name, wh, batch, qty, unit, exp_days, cost)
 ON CONFLICT (row_key) DO NOTHING;
 
@@ -66,7 +66,7 @@ FROM (VALUES
  ('SY-VAN-1L',    'RC-ALA',  3.0, 0),
  ('SY-LAV-1L',    'RC-ALA',  2.0, 75),
  ('ML-OAT-1L',    'RC-ALA',  4.0, 0),
- ('MG-STEP-350',  'TK-AST',  1.0, 110)
+ ('MG-LOGO-350',  'TK-AST',  1.0, 110)
 ) AS p(sku, wh, base, stop_days)
 CROSS JOIN generate_series(current_date - 120, current_date - 1, interval '1 day') AS d
 WHERE d::date < current_date - p.stop_days

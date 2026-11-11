@@ -4,7 +4,7 @@
 
 INSERT INTO airl_settings (module, key, value, updated_by) VALUES
  ('deliveries', 'timezone',             '"Asia/Almaty"',     'demo'),
- ('deliveries', 'org_name',             '"STEP COFFEE"',     'demo'),
+ ('deliveries', 'org_name',             '"Demo Coffee"',     'demo'),
  ('deliveries', 'depot_lat',            '43.2567',           'demo'),
  ('deliveries', 'depot_lon',            '76.9286',           'demo'),
  ('deliveries', 'map_provider',         '"yandex"',          'demo'),

@@ -14,7 +14,7 @@ CREATE TABLE IF NOT EXISTS demo_pick_items (
 );
 
 INSERT INTO demo_pick_items VALUES
- ('CF-ESP-1KG',   'STEP Espresso Blend 1 кг',              'шт', '4870001000011', 'packed',    true,  180, 9800.00),
+ ('CF-ESP-1KG',   'Espresso Blend 1 кг',              'шт', '4870001000011', 'packed',    true,  180, 9800.00),
  ('CF-ETH-250',   'Эфиопия Сидамо 250 г',                  'шт', '4870001000028', 'packed',    true,  180, 3900.00),
  ('CF-COL-250',   'Колумбия Уила 250 г',                   'шт', '4870001000035', 'packed',    true,  180, 3600.00),
  ('SY-VAN-1L',    'Сироп ваниль 1 л',                      'шт', '4870001000042', 'goods',     true,  365, 2400.00),

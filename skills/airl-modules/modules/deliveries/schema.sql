@@ -150,7 +150,7 @@ DECLARE
     v_route   dlv_routes%ROWTYPE;
     v_proof   jsonb;
     v_order   record;
-    v_org     text := airl_setting('deliveries', 'org_name', '"STEP COFFEE"') #>> '{}';
+    v_org     text := airl_setting('deliveries', 'org_name', '"Demo Coffee"') #>> '{}';
     v_mgr     text := airl_setting('deliveries', 'manager_recipient', '"logistics_head"') #>> '{}';
     v_tz      text := airl_setting('deliveries', 'timezone', '"Asia/Almaty"') #>> '{}';
     v_details jsonb;

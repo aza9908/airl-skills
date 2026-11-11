@@ -39,7 +39,7 @@ def tool_resp(name, args, tid="t1"):
     return NS(stop_reason="tool_use", content=[NS(type="tool_use", name=name, input=args, id=tid)])
 
 
-CONF = {"company": "STEP COFFEE", "language": "русский"}
+CONF = {"company": "Demo Coffee", "language": "русский"}
 FACTS = [
     digest.make_fact(CONF, "Обжарка", [
         {"metric_id": "qc_reject_rate", "period": "2026-10", "value": 7.5, "unit": "%", "status": "danger"},
@@ -85,7 +85,7 @@ def test_digest_invented_twice_falls_back():
     c = FakeClient([text_resp("Брак 9% [F1]"), text_resp("Брак 10% [F1]")])
     text, problem = digest.write_with_model(c, CONF, FACTS, digest.dt.date(2026, 11, 11))
     assert text is None and "не сошлись" in problem
-    tpl = digest.template_digest({"company": "STEP COFFEE"}, FACTS, digest.dt.date(2026, 11, 11), note=problem)
+    tpl = digest.template_digest({"company": "Demo Coffee"}, FACTS, digest.dt.date(2026, 11, 11), note=problem)
     assert tpl.splitlines()[1].startswith("🔴") and "7,5%" in tpl and "Сводка без ИИ" in tpl
 
 
@@ -95,7 +95,7 @@ def test_digest_refusal_falls_back():
     assert text is None and problem == "модель отказала"
 
 
-QCONF = {"company": "STEP COFFEE", "queries": [
+QCONF = {"company": "Demo Coffee", "queries": [
     {"name": "metric_history", "description": "История показателя",
      "sql": "SELECT ...", "roles": ["ceo"],
      "params": {"metric_id": {"type": "string", "enum": ["qc_reject_rate"]},

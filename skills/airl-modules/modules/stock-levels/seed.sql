@@ -36,7 +36,7 @@ VALUES
   'Две бутылки разбиты при приёмке', 'open', NULL, now() - interval '4 days', 'wh_lead', 'wh_lead'),
  ('INV-0003', 'PK-VALVE-250', 'ROAST', NULL, 3000, 3200, 'receipt_error', 'storekeeper',
   'Приход 200 шт. не проведён', 'open', NULL, now() - interval '2 days', 'wh_lead', 'wh_lead'),
- ('INV-0004', 'MG-STEP-350', 'TK-AST', NULL, 143, 140, 'unknown', NULL,
+ ('INV-0004', 'MG-LOGO-350', 'TK-AST', NULL, 143, 140, 'unknown', NULL,
   'Причина не найдена, пересчитать ещё раз', 'open', NULL, now() - interval '1 day', 'wh_ast', 'wh_ast')
 ON CONFLICT (doc_no) DO NOTHING;
 
