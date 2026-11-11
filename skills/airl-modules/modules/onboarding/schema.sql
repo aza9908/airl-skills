@@ -1,5 +1,5 @@
 -- Модуль «Онбординг, обучение, аттестация» (onboarding). Требует kit/kit.sql в той же
--- схеме и представление src_employees (адаптер или demo_src.sql).
+-- схеме и представление src_onb_employees (адаптер или demo_src.sql).
 -- ФИО хранится только в источнике; экраны модуля показывают короткое имя (display_name).
 
 -- Чек-листы адаптации по должности. position = NULL — шаблон для всех остальных должностей.
@@ -177,7 +177,7 @@ END $$;
 CREATE OR REPLACE FUNCTION onb_status_audit() RETURNS trigger LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
 BEGIN
     IF NEW.status IS DISTINCT FROM OLD.status THEN
-        IF OLD.status <> CASE TG_TABLE_NAME WHEN 'onb_tasks' THEN 'open' ELSE 'active' END THEN
+        IF OLD.status NOT IN ('open', 'active') THEN
             RAISE EXCEPTION 'onboarding: % уже в статусе %, менять нельзя', TG_TABLE_NAME, OLD.status;
         END IF;
         INSERT INTO airl_audit (actor, module, entity, entity_id, action, from_status, to_status, comment)
@@ -198,7 +198,7 @@ SELECT e.employee_id,
         CASE WHEN split_part(e.full_name, ' ', 2) <> '' THEN ' ' || left(split_part(e.full_name, ' ', 2), 1) || '.' ELSE '' END)::text AS display_name,
        e.position, e.department, e.hired_at, e.manager_id, e.active,
        (current_date - e.hired_at) AS days_since_hire
-FROM src_employees e;
+FROM src_onb_employees e;
 
 -- Экран «Мои задачи»: пункты онбординга с ответственным и просрочкой.
 CREATE OR REPLACE VIEW v_onb_tasks AS
@@ -281,7 +281,7 @@ BEGIN
             WHERE t.active AND (t.position = e.position OR t.position IS NULL)
             ORDER BY (t.position IS NULL), t.id LIMIT 1),
            e.hired_at, p_actor
-    FROM src_employees e
+    FROM src_onb_employees e
     WHERE e.active AND e.hired_at <= current_date
       AND e.hired_at >= current_date - (airl_setting('onboarding', 'generate_window_days', '90'))::text::int
       AND NOT EXISTS (SELECT 1 FROM onb_instances i WHERE i.employee_id = e.employee_id)

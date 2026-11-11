@@ -72,7 +72,8 @@ FROM (VALUES ('STD-ESPRESSO', '1', 'E-002', 390), ('STD-ESPRESSO', '1', 'E-003',
              ('REG-SAFETY',   '1', 'E-101', 39),  ('REG-SAFETY',   '1', 'E-104', 69),
              ('REG-INTERNAL', '2', 'E-001', 88),  ('REG-INTERNAL', '2', 'E-002', 85),  ('REG-INTERNAL', '2', 'E-003', 80),
              ('REG-INTERNAL', '2', 'E-004', 84),  ('REG-INTERNAL', '2', 'E-005', 86),  ('REG-INTERNAL', '2', 'E-006', 70),
-             ('REG-INTERNAL', '2', 'E-010', 88),  ('REG-INTERNAL', '2', 'E-011', 87),  ('REG-INTERNAL', '2', 'E-104', 66))
+             ('REG-INTERNAL', '2', 'E-010', 88),  ('REG-INTERNAL', '2', 'E-011', 87),  ('REG-INTERNAL', '2', 'E-104', 66),
+             ('STD-ESPRESSO', '1', 'E-101', 39),  ('REG-SANITARY', '3', 'E-101', 36),  ('REG-SANITARY', '3', 'E-102', 15))
      AS v(code, ver, emp, ago)
 JOIN onb_documents d ON d.doc_code = v.code AND d.version = v.ver
 ON CONFLICT (document_id, employee_id) DO NOTHING;
@@ -112,15 +113,15 @@ SET status = 'done', done_at = (t.due_date + v.late)::timestamptz + interval '15
     done_by = v.who, updated_by = v.who
 FROM onb_instances i, onb_template_items it,
      (VALUES ('E-101', 'uniform', 0, 'hr_1'),   ('E-101', 'mentor', 0, 'E-002'), ('E-101', 'std', 0, 'E-101'),
-             ('E-101', 'sanitary', 1, 'E-101'), ('E-101', 'shifts', 3, 'E-002'),
+             ('E-101', 'sanitary', 1, 'E-101'), ('E-101', 'test', 0, 'E-101'),   ('E-101', 'shifts', 3, 'E-002'),
              ('E-102', 'uniform', 0, 'hr_1'),   ('E-102', 'mentor', 0, 'E-002'), ('E-102', 'sanitary', 2, 'E-102'),
              ('E-103', 'access', 0, 'it_1'),
-             ('E-104', 'access', 0, 'it_1'),    ('E-104', 'safety', 0, 'E-104'), ('E-104', 'rules', 1, 'E-104'),
+             ('E-104', 'access', 0, 'it_1'),    ('E-104', 'safety', 0, 'E-104'), ('E-104', 'rules', 0, 'E-104'),
              ('E-104', 'meet', 4, 'E-010')) AS v(emp, code, late, who)
 WHERE t.instance_id = i.id AND t.item_id = it.id AND i.employee_id = v.emp AND it.code = v.code
   AND t.status = 'open';
 
--- Тесты: E-101 сдала с первого раза, E-102 не сдал.
+-- Тесты: E-101 сдала с первого раза (пункт уже отмечен в срок), E-102 не сдал.
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM onb_attempts WHERE employee_id = 'E-101') THEN

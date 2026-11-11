@@ -170,8 +170,8 @@ BEGIN
         END CASE;
         IF NEW.status IN ('no_show', 'cancelled_by_patient', 'cancelled_by_clinic') THEN
             UPDATE airl_notifications
-            SET not_before = 'infinity', error = 'cancelled: appointment ' || NEW.status
-            WHERE module = 'appointments' AND sent_at IS NULL
+            SET cancelled_at = now(), error = 'cancelled: appointment ' || NEW.status
+            WHERE module = 'appointments' AND sent_at IS NULL AND cancelled_at IS NULL
               AND dedup_key LIKE 'appointments:remind%:' || NEW.id || ':%';
         END IF;
         INSERT INTO airl_audit (actor, module, entity, entity_id, action, from_status, to_status, comment)
@@ -303,7 +303,7 @@ SELECT n.id, n.dedup_key, split_part(n.dedup_key, ':', 2) AS kind,
        split_part(n.dedup_key, ':', 3)::bigint AS appointment_id,
        n.channel, n.recipient, n.text, n.not_before, n.sent_at, n.error,
        CASE WHEN n.sent_at IS NOT NULL THEN 'sent'
-            WHEN n.not_before = 'infinity' THEN 'cancelled'
+            WHEN n.cancelled_at IS NOT NULL THEN 'cancelled'
             WHEN n.error IS NOT NULL THEN 'error'
             ELSE 'planned' END::text AS state
 FROM airl_notifications n

@@ -1,5 +1,5 @@
 -- Модуль «Остатки, дефицит, неликвиды» (stock-levels). Требует kit/kit.sql в той же
--- схеме и представления src_stock, src_sales_daily (адаптер или demo_src.sql).
+-- схеме и представления src_stk_stock, src_stk_sales_daily (адаптер или demo_src.sql).
 -- Модуль не двигает товар и не меняет остатки в учётной системе: он показывает,
 -- где мало, где лишнее, что истекает, и предлагает закупку. Решает человек.
 
@@ -106,7 +106,7 @@ CREATE OR REPLACE VIEW v_stk_sales_rate AS
 SELECT s.sku, s.warehouse_id,
        round(coalesce(sum(s.qty_out) FILTER (WHERE s.day >= current_date - w.days), 0) / w.days, 3)::numeric(18,3) AS avg_daily_qty,
        max(s.day) FILTER (WHERE s.qty_out > 0) AS last_sale_day
-FROM src_sales_daily s
+FROM src_stk_sales_daily s
 CROSS JOIN (SELECT greatest((airl_setting('stock-levels', 'sales_window_days', '60'))::text::int, 1) AS days) w
 GROUP BY s.sku, s.warehouse_id, w.days;
 
@@ -126,7 +126,7 @@ WITH cfg AS (
            max(currency) AS currency,
            max(updated_at) AS stock_updated_at,
            min(expiry_date) FILTER (WHERE qty > 0) AS nearest_expiry
-    FROM src_stock
+    FROM src_stk_stock
     GROUP BY sku, warehouse_id
 ), keys AS (
     SELECT sku, warehouse_id FROM onhand
@@ -201,7 +201,7 @@ SELECT s.sku, s.sku_name, s.warehouse_id, s.batch, s.qty, s.unit, s.expiry_date,
        (s.expiry_date < current_date) AS expired,
        (s.qty * s.unit_cost)::numeric(18,2) AS batch_value, s.currency,
        row_number() OVER (PARTITION BY s.sku, s.warehouse_id ORDER BY s.expiry_date, s.batch) AS fefo_order
-FROM src_stock s
+FROM src_stk_stock s
 WHERE s.expiry_date IS NOT NULL AND s.qty > 0
   AND s.expiry_date <= current_date + (airl_setting('stock-levels', 'expiry_warn_days', '30'))::text::int;
 
@@ -224,7 +224,7 @@ SELECT d.id, d.doc_no, d.sku, coalesce(p.sku_name, d.sku) AS sku_name, d.warehou
 FROM stk_discrepancies d
 LEFT JOIN LATERAL (
     SELECT max(s.sku_name) AS sku_name, max(s.unit_cost) AS unit_cost, max(s.currency) AS currency
-    FROM src_stock s WHERE s.sku = d.sku
+    FROM src_stk_stock s WHERE s.sku = d.sku
 ) p ON true;
 
 -- Создать предложения закупки по дефициту. Повторный вызов в тот же день ничего не дублирует.

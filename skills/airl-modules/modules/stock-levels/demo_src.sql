@@ -1,6 +1,6 @@
 -- Демо-источники: синтетические остатки и продажи кофейной компании (РЦ Алматы,
 -- ТК Астана, обжарочный цех). Только для разработки и показа.
--- В работе src_stock и src_sales_daily заменяет адаптер /airl-dwh или /airl-connect
+-- В работе src_stk_stock и src_stk_sales_daily заменяет адаптер /airl-dwh или /airl-connect
 -- (обычно поверх остатков и реализации из 1С).
 
 CREATE TABLE IF NOT EXISTS demo_stk_stock (
@@ -72,10 +72,10 @@ CROSS JOIN generate_series(current_date - 120, current_date - 1, interval '1 day
 WHERE d::date < current_date - p.stop_days
 ON CONFLICT (sku, warehouse_id, day) DO NOTHING;
 
-CREATE OR REPLACE VIEW src_stock AS
+CREATE OR REPLACE VIEW src_stk_stock AS
 SELECT sku, sku_name, warehouse_id, qty, unit, batch, expiry_date, unit_cost, currency, updated_at
 FROM demo_stk_stock;
 
-CREATE OR REPLACE VIEW src_sales_daily AS
+CREATE OR REPLACE VIEW src_stk_sales_daily AS
 SELECT sku, warehouse_id, day, qty_out
 FROM demo_stk_sales;

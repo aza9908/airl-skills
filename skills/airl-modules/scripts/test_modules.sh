@@ -64,4 +64,29 @@ SQL
   if [ $bad -eq 0 ]; then echo "✔ $m: $summary"; else fail=1; fi
   psql "$DATABASE_URL" -q -X -c "DROP SCHEMA IF EXISTS $schema CASCADE;" >/dev/null
 done
+
+# Все модули вместе в одной схеме (как у отдела с несколькими модулями), дважды,
+# и чтение показателей из другой схемы — как их читают хаб и ИИ-слой.
+if [ ${#MODULES[@]} -gt 1 ]; then
+  schema="test_airl_together"
+  psql "$DATABASE_URL" -q -X -v ON_ERROR_STOP=1 -c "DROP SCHEMA IF EXISTS $schema CASCADE; CREATE SCHEMA $schema;" >/dev/null
+  script="SET search_path TO $schema;"$'\n'"\\i $ROOT/kit/kit.sql"$'\n'
+  for m in "${MODULES[@]}"; do script+="\\i $ROOT/modules/$m/demo_src.sql"$'\n'; done
+  for m in "${MODULES[@]}"; do script+="\\i $ROOT/modules/$m/schema.sql"$'\n'; done
+  for m in "${MODULES[@]}"; do script+="\\i $ROOT/modules/$m/seed.sql"$'\n'; done
+  if ! out=$(printf '%s' "$script" | psql "$DATABASE_URL" -q -X -v ON_ERROR_STOP=1 2>&1) || \
+     ! out2=$(printf '%s' "$script" | psql "$DATABASE_URL" -q -X -v ON_ERROR_STOP=1 2>&1); then
+    echo "✖ все вместе: установка не прошла"; echo "$out$out2" | tail -5; fail=1
+  else
+    bad=0; n=0
+    for v in $(psql "$DATABASE_URL" -X -At -c "SELECT table_name FROM information_schema.views WHERE table_schema = '$schema' AND table_name LIKE 'm\_%' ORDER BY 1"); do
+      n=$((n+1))
+      if ! psql "$DATABASE_URL" -X -At -v ON_ERROR_STOP=1 -c "SET search_path TO public; SELECT count(*) FROM $schema.$v" >/dev/null 2>&1; then
+        echo "✖ все вместе: $schema.$v не читается из другой схемы"; bad=1
+      fi
+    done
+    [ $bad -eq 0 ] && echo "✔ все вместе: ${#MODULES[@]} модулей в одной схеме, $n показателей читаются из другой схемы" || fail=1
+  fi
+  psql "$DATABASE_URL" -q -X -c "DROP SCHEMA IF EXISTS $schema CASCADE;" >/dev/null
+fi
 exit $fail

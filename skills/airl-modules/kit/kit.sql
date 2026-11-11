@@ -59,13 +59,18 @@ CREATE TABLE IF NOT EXISTS airl_notifications (
     text        text        NOT NULL,
     not_before  timestamptz NOT NULL DEFAULT now(),
     sent_at     timestamptz,
+    cancelled_at timestamptz,                  -- отменено до отправки (приём отменён и т.п.)
     error       text,
     created_at  timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX IF NOT EXISTS airl_notifications_due_idx ON airl_notifications (not_before) WHERE sent_at IS NULL;
+ALTER TABLE airl_notifications ADD COLUMN IF NOT EXISTS cancelled_at timestamptz;
+-- Отправщик берёт: sent_at IS NULL AND cancelled_at IS NULL AND not_before <= now().
+DROP INDEX IF EXISTS airl_notifications_due_idx;
+CREATE INDEX IF NOT EXISTS airl_notifications_pending_idx ON airl_notifications (not_before)
+    WHERE sent_at IS NULL AND cancelled_at IS NULL;
 
 -- Поле updated_at обновляется само.
-CREATE OR REPLACE FUNCTION airl_touch() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE OR REPLACE FUNCTION airl_touch() RETURNS trigger LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
 BEGIN
     NEW.updated_at := now();
     RETURN NEW;

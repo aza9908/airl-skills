@@ -1,5 +1,5 @@
 -- Синтетические записи модуля для разработки и показа: клиника в Ташкентской области,
--- 2000 вымышленных пациентов, рабочее время и записи за 150 дней и на неделю вперёд.
+-- 3000 вымышленных пациентов, рабочее время и записи за 150 дней и на неделю вперёд.
 
 INSERT INTO airl_settings (module, key, value, updated_by) VALUES
  ('appointments', 'org_name',           '"Orzu Medical"',  'demo'),
@@ -31,7 +31,7 @@ SELECT 'P-' || lpad(n::text, 6, '0'),
        CASE WHEN n % 97 = 0 THEN 'kk' WHEN n % 3 = 1 THEN 'ru' ELSE 'uz' END,
        CASE WHEN n % 10 < 7 THEN 500000000 + n END,
        now() - interval '200 days', 'reception_1'
-FROM generate_series(1, 2000) AS n
+FROM generate_series(1, 3000) AS n
 ON CONFLICT (customer_no) DO NOTHING;
 
 -- Согласие на обработку — у всех; на Telegram — у подключивших бота, кроме каждого 20-го.
@@ -79,16 +79,16 @@ FROM (
     SELECT s.resource_id, g.slot_start, g.slot_start + make_interval(mins => r.slot_minutes) AS slot_end,
            g.h, g.ci,
            CASE WHEN g.slot_start >= now() THEN CASE WHEN g.h % 3 = 0 THEN 'confirmed' ELSE 'booked' END
-                WHEN g.h % 100 < 11 THEN 'no_show'
-                WHEN g.h % 100 < 17 THEN 'cancelled_by_patient'
-                WHEN g.h % 100 < 19 THEN 'cancelled_by_clinic'
+                WHEN g.h / 100 % 100 < 8  THEN 'no_show'
+                WHEN g.h / 100 % 100 < 13 THEN 'cancelled_by_patient'
+                WHEN g.h / 100 % 100 < 15 THEN 'cancelled_by_clinic'
                 ELSE 'done' END AS status
     FROM apt_shifts s
     JOIN src_apt_resources r ON r.resource_id = s.resource_id
     CROSS JOIN LATERAL (
         SELECT gs AS slot_start,
                abs(hashtext(s.resource_id || gs::text)) AS h,
-               abs(hashtext('c' || s.resource_id || gs::text)) % 2000 + 1 AS ci
+               abs(hashtext('c' || s.resource_id || gs::text)) % 3000 + 1 AS ci
         FROM generate_series(s.starts_at, s.ends_at - make_interval(mins => r.slot_minutes),
                              make_interval(mins => r.slot_minutes)) AS gs
     ) g

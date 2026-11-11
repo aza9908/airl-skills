@@ -1,5 +1,5 @@
 -- Демо-источник: синтетические сотрудники кофейной компании (розница, обжарка, склад).
--- Только для разработки и показа. В работе src_employees заменяет адаптер /airl-dwh
+-- Только для разработки и показа. В работе src_onb_employees заменяет адаптер /airl-dwh
 -- или /airl-connect (обычно поверх кадров 1С:ЗУП или HR-системы).
 
 CREATE TABLE IF NOT EXISTS demo_onb_employees (
@@ -29,7 +29,7 @@ INSERT INTO demo_onb_employees VALUES
  ('E-104', 'Нурлан Абенов',     'Обжарщик',             'Обжарка',   70, 'E-010', true)
 ON CONFLICT (employee_id) DO NOTHING;
 
-CREATE OR REPLACE VIEW src_employees AS
+CREATE OR REPLACE VIEW src_onb_employees AS
 SELECT employee_id, full_name, position, department,
        (current_date - hired_days)::date AS hired_at,
        manager_id, active
