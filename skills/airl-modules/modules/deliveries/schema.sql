@@ -313,7 +313,7 @@ BEGIN
                                 amount_to_collect, currency, created_by)
     SELECT o.order_id, o.address || coalesce(', ' || o.city, ''), o.lat, o.lon, o.window_from, o.window_to,
            o.weight_kg, o.volume_m3,
-           CASE WHEN o.payment_status IN ('cod', 'unpaid') THEN o.amount ELSE 0 END, o.currency, p_actor
+           CASE WHEN o.payment_status = 'cod' THEN o.amount ELSE 0 END, o.currency, p_actor
     FROM src_dlv_orders o
     WHERE o.status = 'confirmed'
       AND NOT EXISTS (SELECT 1 FROM dlv_deliveries d WHERE d.order_id = o.order_id)
