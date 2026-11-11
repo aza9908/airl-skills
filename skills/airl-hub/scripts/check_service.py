@@ -55,9 +55,22 @@ def read_map(path):
             version = m.group(1)
     # Раздел 4: заголовки вида "### revenue — Выручка"
     metrics = set(re.findall(r"^#{3,4}\s+`?([a-z][a-z0-9_]*)`?\s+[—–-]", section(text, 4), re.M))
-    # Раздел 6: строки таблицы, первая ячейка — `id`
-    departments = set(re.findall(r"^\|\s*`([a-z][a-z0-9_]*)`\s*\|", section(text, 6), re.M))
-    return version, metrics, departments
+    # Раздел 6: строки таблицы, первая ячейка — `id`; колонка «Даёт доступ» — кому
+    # отдел разрешил читать свою витрину
+    departments, grants = set(), {}
+    access_col = None
+    for line in section(text, 6).splitlines():
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if access_col is None and any("Даёт доступ" in c for c in cells):
+            access_col = next(i for i, c in enumerate(cells) if "Даёт доступ" in c)
+            continue
+        m = re.match(r"^`([a-z][a-z0-9_]*)`$", cells[0]) if cells else None
+        if not m:
+            continue
+        departments.add(m.group(1))
+        if access_col is not None and access_col < len(cells):
+            grants[m.group(1)] = cells[access_col]
+    return version, metrics, departments, grants
 
 
 def version_tuple(v):
@@ -65,7 +78,7 @@ def version_tuple(v):
     return (int(parts[0]), int(parts[1]) if len(parts) > 1 else 0) if parts else None
 
 
-def check_files(svc, map_version, map_metrics, departments):
+def check_files(svc, map_version, map_metrics, departments, grants):
     required = ["id", "title", "department", "map_version", "version", "base_path",
                 "roles", "data", "hub"]
     missing = [k for k in required if k not in svc]
@@ -117,6 +130,10 @@ def check_files(svc, map_version, map_metrics, departments):
                f"нет в карте: {', '.join(unknown)}" if unknown
                else f"показателей из карты: {len(hub_metrics)}")
 
+    if hub_metrics and not 2 <= len(hub_metrics) <= 4:
+        report("3 Одни цифры", WARN,
+               f"в hub.metrics {len(hub_metrics)} показателя(ей): на плитке хаба нужно 2–4")
+
     data = svc.get("data") if isinstance(svc.get("data"), dict) else {}
     writes = data.get("writes", []) or []
     allowed = f"mart_{svc.get('department', sid)}"
@@ -128,6 +145,24 @@ def check_files(svc, map_version, map_metrics, departments):
     report("4 Свой участок", FAIL if bad_reads else OK,
            f"читает мимо core/metrics/{allowed}: {', '.join(map(str, bad_reads))}" if bad_reads
            else "читает только core, metrics и свою витрину")
+
+    shared = data.get("reads_shared", []) or []
+    bad_shared = []
+    for r in shared:
+        owner_schema = str(r).split(".")[0]
+        owner = owner_schema[len("mart_"):] if owner_schema.startswith("mart_") else None
+        granted = grants.get(owner, "") if owner else ""
+        if not owner or owner == sid or not re.search(rf"`?{re.escape(sid)}`?", granted):
+            bad_shared.append(str(r))
+    if shared:
+        report("4 Свой участок", FAIL if bad_shared else OK,
+               f"чтение чужой витрины без разрешения в разделе 6 карты: {', '.join(bad_shared)}"
+               if bad_shared else f"чтение чужих витрин разрешено картой: {len(shared)}")
+
+    public = svc.get("public_paths", []) or []
+    bad_public = [p for p in public if not str(p).startswith(f"/{sid}/")]
+    if bad_public:
+        report("5 Один вход", FAIL, f"public_paths вне /{sid}/: {', '.join(map(str, bad_public))}")
 
     roles = svc.get("roles") if isinstance(svc.get("roles"), dict) else {}
     view = roles.get("view", []) or []
@@ -169,6 +204,20 @@ def check_live(svc, base_url, map_metrics, cookie):
                    f"выложена версия {data.get('version')}, в airl.service.json {svc.get('version')}")
     except Exception as e:  # noqa: BLE001
         report("8 Живой", FAIL, f"/healthz недоступен: {type(e).__name__}")
+
+    for path in svc.get("public_paths", []) or []:
+        try:
+            req = urllib.request.Request(base + str(path), data=b"{}", method="POST",
+                                         headers={"Content-Type": "application/json"})
+            try:
+                with urllib.request.urlopen(req, timeout=5) as r:
+                    code = r.status
+            except urllib.error.HTTPError as e:
+                code = e.code
+            report("5 Один вход", OK if code in (401, 403) else FAIL,
+                   f"{path} без секрета → {code} (ожидается 401 или 403)")
+        except Exception as e:  # noqa: BLE001
+            report("5 Один вход", FAIL, f"{path} недоступен: {type(e).__name__}")
 
     summary_url = base + str(hub.get("summary", ""))
     try:
@@ -273,12 +322,12 @@ def main():
             svc = json.load(f)
         if not isinstance(svc, dict):
             raise ValueError("airl.service.json должен быть объектом")
-        map_version, map_metrics, departments = read_map(a.map)
+        map_version, map_metrics, departments, grants = read_map(a.map)
     except (OSError, ValueError) as e:
         print(f"Не удалось прочитать файлы: {e}", file=sys.stderr)
         return 2
 
-    check_files(svc, map_version, map_metrics, departments)
+    check_files(svc, map_version, map_metrics, departments, grants)
     if a.registry:
         check_registry(svc, a.registry)
     if a.url and not a.files_only:
