@@ -17,7 +17,13 @@
   5. мини-парсер YAML даёт то же, что PyYAML, на шаблонах навыка;
   6. отчёт: index.html открывается в Playwright без ошибок в консоли, графики
      на месте, на ширине телефона нет горизонтальной прокрутки; скриншоты
-     светлой и тёмной темы — в папку из PROGRESS_SCREENSHOTS или во временную.
+     светлой и тёмной темы — в папку из PROGRESS_SCREENSHOTS или во временную;
+  7. несколько потоков в одном списке: свои даты старта, средние по потокам,
+     блок «Сравнение потоков», фильтр «Поток» в браузере;
+  8. имя репозитория без владельца в режиме --local;
+  9. монорепозиторий: сервисы в подпапках (колонка path) — отдельные проценты
+     и активность по подпапке, локально и через GitHub API; папка внутри git;
+ 10. старая история (один поток на снимок) по-прежнему рисуется.
 
 Нужно: Python 3.9+, git. Для пункта 6 — пакет playwright и Chromium
 (или Chrome: путь в PLAYWRIGHT_CHROME); без них пункт 6 пропускается.
@@ -261,9 +267,16 @@ class FakeGitHub:
         if rest[:2] == ["git", "blobs"]:
             return 200, self.g(repo, "cat-file", "-p", rest[2]), {"Content-Type": "application/octet-stream"}
         if rest[0] == "commits":
-            since = q.get("since", [""])[0]
-            out = self.g(repo, "log", f"--since={since}", "--format=%H", q.get("sha", ["main"])[0]).decode().split()
-            return 200, json.dumps([{"sha": s} for s in out]).encode(), js
+            args = ["log", "--format=%H %cI"]
+            if q.get("since"):
+                args.append(f"--since={q['since'][0]}")
+            if q.get("per_page", ["100"])[0] == "1":
+                args.append("-1")
+            args.append(q.get("sha", ["main"])[0])
+            if q.get("path"):
+                args += ["--", q["path"][0]]
+            out = [ln.split() for ln in self.g(repo, *args).decode().splitlines() if ln.strip()]
+            return 200, json.dumps([{"sha": h, "commit": {"committer": {"date": d}}} for h, d in out]).encode(), js
         if rest[0] == "pulls":
             n = 1 if parts[2] == "ahead" else 0
             return 200, json.dumps([{"number": i} for i in range(n)]).encode(), js
@@ -556,6 +569,320 @@ class ProgressTest(unittest.TestCase):
                 ctx.close()
             browser.close()
         print(f"\nСкриншоты отчёта: {shots}", file=sys.stderr)
+
+
+# ---------------------------------------------------------------------------
+# Несколько потоков, репозиторий без владельца, монорепозиторий, старая история
+# ---------------------------------------------------------------------------
+
+MULTI_ROSTER = """name,company,department,mode,repo,branch,live_url,cohort,path
+Алия Осень-1,Арома,продажи,solo,mc/a1,main,,Осень,
+Арман Осень-2,Север,склад,solo,mc/a2,main,,Осень,
+Белла Зима-1,Арома,финансы,solo,mc/b1,main,,Зима,
+Бахыт Зима-2,Север,продажи,solo,b2,main,,Зима,
+"""
+MULTI_WEIGHTS = """stages: {start: 5, plan: 20, data: 25, security: 15, launch: 25, demo: 10}
+thresholds:
+  stall_days: 30
+schedule:
+  start_date: ""
+  expected_end_of_week: [5, 25, 50, 65, 90, 100]
+  cohorts:
+    Осень:
+      start_date: "2026-11-02"
+    Зима:
+      start_date: "2026-11-16"
+"""
+
+MONO_ROSTER = """name,company,department,mode,repo,branch,live_url,cohort,path
+Фарида Финансы,Дару,финансы,hub,{repo},main,,Монорепо,services/finance
+Серик Склад,Дару,склад,hub,{repo},main,,Монорепо,services/stock
+"""
+
+
+def launch_browser(p):
+    for opts in ({}, {"executable_path": os.environ.get("PLAYWRIGHT_CHROME") or "/usr/bin/google-chrome"}):
+        try:
+            return p.chromium.launch(**opts)
+        except Exception:  # noqa: BLE001
+            continue
+    return None
+
+
+class MultiCohortTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = Path(tempfile.mkdtemp(prefix="airl_progress_mc_"))
+        base = cls.tmp / "repos"
+
+        def init(d):
+            d.mkdir(parents=True)
+            git(d, "init", "-q", "-b", "main")
+            return d
+        a1 = init(base / "mc__a1")
+        commit(a1, {"CLAUDE.md": LONG, "SPEC.md": SPEC_FULL, "ARCHITECTURE.md": ARCH}, "2026-11-10T10:00:00Z")
+        a2 = init(base / "mc__a2")
+        commit(a2, {"CLAUDE.md": LONG}, "2026-11-10T10:00:00Z")
+        b1 = init(base / "mc__b1")
+        commit(b1, {"README.md": "x"}, "2026-11-17T10:00:00Z")
+        b2 = init(base / "b2")                       # без владельца: папка просто «b2»
+        commit(b2, {"CLAUDE.md": LONG, "SPEC.md": SPEC_TEMPLATE}, "2026-11-17T10:00:00Z")
+        cls.roster = cls.tmp / "roster.csv"
+        cls.roster.write_text(MULTI_ROSTER, encoding="utf-8")
+        cls.weights = cls.tmp / "weights.yml"
+        cls.weights.write_text(MULTI_WEIGHTS, encoding="utf-8")
+        cls.data = cls.tmp / "progress.jsonl"
+        cls.out = cls.tmp / "report"
+        common = ["--roster", str(cls.roster), "--weights", str(cls.weights), "--local", str(base),
+                  "--data", str(cls.data), "--out", str(cls.out), "--no-live"]
+        run("check", *common, "--now", NOW[0])
+        commit(a2, {"SPEC.md": SPEC_FULL, "ARCHITECTURE.md": ARCH}, "2026-11-18T12:00:00Z")
+        commit(b1, {"CLAUDE.md": LONG}, "2026-11-18T12:00:00Z")
+        run("check", *common, "--now", NOW[1])
+        commit(a2, {"DWH.md": LONG, "migrations/001.sql": "--"}, "2026-11-20T12:00:00Z")
+        cls.tg = run("check", *common, "--now", NOW[2], "--telegram-text")
+        cls.hist = progress.load_history(cls.data)
+
+    @classmethod
+    def tearDownClass(cls):
+        if not os.environ.get("KEEP_TMP"):
+            shutil.rmtree(cls.tmp, ignore_errors=True)
+
+    def test_cohorts_stats(self):
+        self.assertEqual(len(self.hist), 3)
+        for snap in self.hist:
+            self.assertEqual(set(snap["cohorts"]), {"Осень", "Зима"})
+            self.assertEqual(snap["cohort"], "Все потоки")
+            for c in ("Осень", "Зима"):
+                pc = [r["percent"] for r in snap["participants"] if r["cohort"] == c]
+                self.assertEqual(len(pc), 2)
+                st = next(x for x in progress.cohort_stats(snap) if x["cohort"] == c)
+                self.assertAlmostEqual(st["avg"], sum(pc) / 2)
+                self.assertAlmostEqual(st["median"], sum(pc) / 2)
+                self.assertAlmostEqual(sum(st["stages"].values()), 1.0)
+            # у каждого потока свой план по своей дате старта
+            t = progress.parse_ts(snap["ts"])
+            cfg = progress.load_config(str(self.weights))
+            self.assertEqual(snap["cohorts"]["Осень"]["start_date"], "2026-11-02")
+            self.assertAlmostEqual(snap["cohorts"]["Осень"]["expected"],
+                                   round(progress.expected_percent(cfg, t, "Осень"), 1))
+            self.assertLess(snap["cohorts"]["Зима"]["expected"], snap["cohorts"]["Осень"]["expected"])
+            self.assertIsNone(snap["expected"])                      # планы разные
+            for r in snap["participants"]:
+                self.assertEqual(r["expected"], snap["cohorts"][r["cohort"]]["expected"])
+        # «Осень» растёт по снимкам (a2 догоняет)
+        av = [next(x for x in progress.cohort_stats(s) if x["cohort"] == "Осень")["avg"] for s in self.hist]
+        self.assertLess(av[0], av[1])
+        self.assertLess(av[1], av[2])
+        # отстаёт относительно плана своего потока
+        last = by_id(self.hist[-1])
+        self.assertIn("behind", {f["kind"] for f in last["mc/a2"]["flags"]} | {f["kind"] for f in last["mc/a1"]["flags"]})
+        md = (self.out / "summary.md").read_text(encoding="utf-8")
+        self.assertIn("## Сравнение потоков", md)
+        self.assertIn("потоков: 2", md)
+        st = {x["cohort"]: x for x in progress.cohort_stats(self.hist[-1])}
+        self.assertIn(f"| Осень | 2 | {st['Осень']['avg']:.0f} |", md)
+        self.assertIn("Участников: 4, потоков: 2", self.tg)
+        self.assertIn("• Осень — 2 уч., средний", self.tg)
+        self.assertIn("• Зима — 2 уч., средний", self.tg)
+        html = (self.out / "index.html").read_text(encoding="utf-8")
+        self.assertIn("Сравнение потоков", html)
+        self.assertIn('id="f-cohort"', html)
+        self.assertIn('"cohort": "Зима"', html)
+
+    def test_repo_without_owner_local(self):
+        r = by_id(self.hist[-1])["b2"]
+        self.assertNotIn("error", r)
+        self.assertEqual(r["items"]["claude_md"], 1.0)
+        self.assertEqual(r["activity"]["commits_7d"], 1)
+        self.assertEqual(progress.load_roster(str(self.roster))[3]["owner"], "")
+        # нет папки — понятная ошибка с путями, где искали
+        bad = self.tmp / "bad.csv"
+        bad.write_text("name,repo\nНикто,nothing-here\n", encoding="utf-8")
+        run("check", "--roster", str(bad), "--local", str(self.tmp / "repos"), "--data",
+            str(self.tmp / "bad" / "p.jsonl"), "--out", str(self.tmp / "bad" / "r"), "--no-live")
+        err = progress.load_history(self.tmp / "bad" / "p.jsonl")[-1]["participants"][0]["error"]
+        self.assertIn("нет локальной папки", err)
+        self.assertIn("nothing-here", err)
+        # для GitHub имя без владельца — ошибка строки, а не падение
+        with self.assertRaises(ValueError):
+            progress.parse_repo("b2")
+
+    def test_old_single_cohort_history(self):
+        old = json.loads(json.dumps(self.hist[0]))
+        old.pop("cohorts")
+        old["cohort"] = "Старая-когорта"
+        old["participants"] = [r for r in old["participants"] if r["cohort"] == "Осень"]
+        for r in old["participants"]:
+            r.pop("cohort")
+            r.pop("path", None)
+        d = self.tmp / "old"
+        d.mkdir()
+        (d / "p.jsonl").write_text(json.dumps(old, ensure_ascii=False) + "\n", encoding="utf-8")
+        tg = run("report", "--data", str(d / "p.jsonl"), "--out", str(d / "r"), "--telegram-text")
+        self.assertIn("Старая-когорта", tg)
+        self.assertNotIn("потоков", tg)
+        md = (d / "r" / "summary.md").read_text(encoding="utf-8")
+        self.assertIn("# Прогресс когорты «Старая-когорта»", md)
+        self.assertNotIn("Сравнение потоков", md)
+        html = (d / "r" / "index.html").read_text(encoding="utf-8")
+        self.assertIn("Алия Осень-1", html)
+        self.__class__.old_html = d / "r" / "index.html"
+
+    def test_report_browser(self):
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError:
+            self.skipTest("нет пакета playwright")
+        if not hasattr(self.__class__, "old_html"):
+            self.test_old_single_cohort_history()
+        shots = Path(os.environ.get("PROGRESS_SCREENSHOTS") or (self.tmp / "shots"))
+        shots.mkdir(parents=True, exist_ok=True)
+        url = (self.out / "index.html").resolve().as_uri()
+        with sync_playwright() as p:
+            browser = launch_browser(p)
+            if browser is None:
+                self.skipTest("нет Chromium для Playwright")
+            for scheme, w, h, name in (("light", 1280, 900, "desktop-light"), ("dark", 1280, 900, "desktop-dark"),
+                                       ("light", 390, 844, "phone-light")):
+                ctx = browser.new_context(viewport={"width": w, "height": h}, color_scheme=scheme, device_scale_factor=2)
+                page = ctx.new_page()
+                errors = []
+                page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
+                page.on("pageerror", lambda e: errors.append(str(e)))
+                page.goto(url)
+                page.wait_for_selector("#cmp-line svg")
+                self.assertTrue(page.locator("#sec-cohorts").is_visible())
+                self.assertEqual(page.locator("#cmp-table tbody tr").count(), 2)
+                self.assertEqual(page.locator("#cmp-line svg path[data-cohort]").count(), 2)
+                self.assertIn("дни от старта", page.locator("#cmp-axis").inner_text())
+                self.assertEqual(page.locator("#lb .lb-row").count(), 4)
+                self.assertIn("4", page.locator("#tiles").inner_text())
+                page.select_option("#f-cohort", "Зима")
+                self.assertEqual(page.locator("#lb .lb-row").count(), 2)
+                self.assertIn("Зима", page.locator("#title").inner_text())
+                self.assertEqual(page.locator("#cmp-table tbody tr.on").count(), 1)
+                page.select_option("#f-company", "Арома")
+                self.assertEqual(page.locator("#lb .lb-row").count(), 1)
+                self.assertEqual(page.locator("#heat tbody tr").count(), 1)
+                self.assertEqual(page.locator("#cmp-table tbody tr").count(), 2)
+                page.select_option("#f-company", "")
+                if name != "phone-light":
+                    page.select_option("#f-cohort", "")
+                overflow = page.evaluate("document.documentElement.scrollWidth - document.documentElement.clientWidth")
+                self.assertLessEqual(overflow, 0, f"горизонтальная прокрутка на {name}")
+                self.assertEqual(errors, [], name)
+                page.screenshot(path=str(shots / f"progress-multicohort-{name}.png"), full_page=True)
+                ctx.close()
+            # старая история: блок сравнения скрыт, ошибок нет
+            ctx = browser.new_context(viewport={"width": 390, "height": 844}, device_scale_factor=2)
+            page = ctx.new_page()
+            errors = []
+            page.on("pageerror", lambda e: errors.append(str(e)))
+            page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
+            page.goto(self.old_html.resolve().as_uri())
+            page.wait_for_selector("#line svg")
+            self.assertFalse(page.locator("#sec-cohorts").is_visible())
+            self.assertEqual(page.locator("#lb .lb-row").count(), 2)
+            self.assertEqual(errors, [])
+            page.screenshot(path=str(shots / "progress-multicohort-old-history.png"), full_page=True)
+            ctx.close()
+            browser.close()
+        print(f"\nСкриншоты (несколько потоков): {shots}", file=sys.stderr)
+
+
+class MonorepoTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = Path(tempfile.mkdtemp(prefix="airl_progress_mono_"))
+        cls.base = cls.tmp / "repos"
+        m = cls.base / "org__mono"
+        m.mkdir(parents=True)
+        git(m, "init", "-q", "-b", "main")
+        commit(m, {"README.md": "монорепозиторий", ".github/workflows/ci.yml": "name: ci",
+                   "services/stock/CLAUDE.md": LONG}, "2026-11-13T08:00:00Z")
+        commit(m, {"services/finance/CLAUDE.md": LONG, "services/finance/SPEC.md": SPEC_FULL,
+                   "services/finance/ARCHITECTURE.md": ARCH.replace("solo", "hub"),
+                   "services/finance/DWH.md": LONG}, "2026-11-20T10:00:00Z")
+        commit(m, {"services/finance/migrations/001.sql": "--"}, "2026-11-22T10:00:00Z")
+
+    @classmethod
+    def tearDownClass(cls):
+        if not os.environ.get("KEEP_TMP"):
+            shutil.rmtree(cls.tmp, ignore_errors=True)
+
+    def _check(self, tag, repo, local, extra=()):
+        roster = self.tmp / f"{tag}.csv"
+        roster.write_text(MONO_ROSTER.format(repo=repo), encoding="utf-8")
+        d = self.tmp / tag
+        args = ["check", "--roster", str(roster), "--data", str(d / "p.jsonl"), "--out", str(d / "r"),
+                "--now", NOW[2], "--no-live", *extra]
+        if local:
+            args += ["--local", str(local)]
+        run(*args)
+        return progress.load_history(d / "p.jsonl")[-1]
+
+    def _assert_mono(self, snap, fin_id, st_id):
+        s = by_id(snap)
+        fin, st = s[fin_id], s[st_id]
+        self.assertNotIn("error", fin)
+        self.assertNotIn("error", st)
+        self.assertEqual(fin["items"]["spec_pain"], 1.0)
+        self.assertEqual(fin["items"]["migrations"], 1.0)
+        self.assertEqual(st["items"]["spec"], 0.0)
+        self.assertEqual(st["items"]["migrations"], 0.0)          # миграции соседа не засчитываются
+        self.assertEqual(fin["items"]["ci"], 1.0)                  # CI в корне монорепозитория
+        self.assertEqual(st["items"]["ci"], 1.0)
+        self.assertGreater(fin["percent"], st["percent"] + 10)
+        self.assertEqual(fin["activity"]["commits_7d"], 2)
+        self.assertEqual(st["activity"]["commits_7d"], 0)
+        self.assertEqual(st["activity"]["days_since_commit"], 10)
+        stalled = [f for f in st["flags"] if f["kind"] == "stalled"]
+        self.assertEqual(stalled and stalled[0]["label"], "застрял 10 дн.")
+        self.assertNotIn("stalled", {f["kind"] for f in fin["flags"]})
+        return fin, st
+
+    def test_monorepo_local(self):
+        snap = self._check("local", "org/mono", self.base)
+        fin, _ = self._assert_mono(snap, "org/mono:services/finance", "org/mono:services/stock")
+        self.assertEqual(fin["path"], "services/finance")
+
+    def test_monorepo_local_without_owner(self):
+        snap = self._check("noowner", "org__mono", self.base)
+        self._assert_mono(snap, "org__mono:services/finance", "org__mono:services/stock")
+
+    def test_folder_inside_git_repo(self):
+        # список указывает на «services», а папка лежит внутри git-репозитория
+        roster = self.tmp / "inside.csv"
+        roster.write_text("name,repo,cohort\nФин,finance,X\nСклад,stock,X\n", encoding="utf-8")
+        d = self.tmp / "inside"
+        run("check", "--roster", str(roster), "--local", str(self.base / "org__mono" / "services"),
+            "--data", str(d / "p.jsonl"), "--out", str(d / "r"), "--now", NOW[2], "--no-live")
+        s = by_id(progress.load_history(d / "p.jsonl")[-1])
+        self.assertEqual(s["finance"]["activity"]["commits_7d"], 2)
+        self.assertEqual(s["stock"]["activity"]["days_since_commit"], 10)
+        self.assertEqual(s["finance"]["items"]["ci"], 1.0)
+
+    def test_monorepo_github_api(self):
+        fake = FakeGitHub(self.base)
+        old = {k: os.environ.get(k) for k in ("GITHUB_API_URL", "GITHUB_TOKEN", "GH_TOKEN")}
+        os.environ["GITHUB_API_URL"] = fake.url
+        os.environ["GITHUB_TOKEN"] = FAKE_TOKEN
+        os.environ.pop("GH_TOKEN", None)
+        try:
+            snap = self._check("gh", "org/mono", None)
+        finally:
+            fake.close()
+            for k, v in old.items():
+                if v is None:
+                    os.environ.pop(k, None)
+                else:
+                    os.environ[k] = v
+        self._assert_mono(snap, "org/mono:services/finance", "org/mono:services/stock")
+        self.assertTrue(any("path=services/stock" in x for x in fake.log))
+        loc = by_id(self._check("local2", "org/mono", self.base))
+        for pid, p in by_id(snap).items():
+            self.assertEqual(p["items"], loc[pid]["items"], pid)
 
 
 if __name__ == "__main__":

@@ -11,6 +11,7 @@
   --text-primary: #0b0b0b; --text-secondary: #52514e; --text-muted: #898781;
   --grid: #e1e0d9; --axis: #c3c2b7; --border: rgba(11,11,11,0.10);
   --series-1: #2a78d6; --series-2: #eb6834; --others: #d4d3cc;
+  --cat-3: #1baf7a; --cat-4: #eda100; --cat-5: #e87ba4; --cat-6: #008300; --cat-7: #6250d6; --cat-8: #e34948;
   --seq-0: #ebeae5; --seq-1: #86b6ef; --seq-2: #5598e7; --seq-3: #256abf; --seq-4: #104281;
   --good: #0ca30c; --good-text: #006300; --warning: #fab219; --serious: #ec835a; --critical: #d03b3b;
 }
@@ -21,6 +22,7 @@
     --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #898781;
     --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
     --series-1: #3987e5; --series-2: #d95926; --others: #3d3d3a;
+    --cat-3: #199e70; --cat-4: #c98500; --cat-5: #d55181; --cat-6: #008300; --cat-7: #9085e9; --cat-8: #e66767;
     --seq-0: #2c2c2a; --seq-1: #184f95; --seq-2: #256abf; --seq-3: #3987e5; --seq-4: #86b6ef;
     --good-text: #0ca30c;
   }
@@ -31,6 +33,7 @@
   --text-primary: #f0efec; --text-secondary: #c3c2b7; --text-muted: #898781;
   --grid: #2c2c2a; --axis: #383835; --border: rgba(255,255,255,0.10);
   --series-1: #3987e5; --series-2: #d95926; --others: #3d3d3a;
+  --cat-3: #199e70; --cat-4: #c98500; --cat-5: #d55181; --cat-6: #008300; --cat-7: #9085e9; --cat-8: #e66767;
   --seq-0: #2c2c2a; --seq-1: #184f95; --seq-2: #256abf; --seq-3: #3987e5; --seq-4: #86b6ef;
   --good-text: #0ca30c;
 }
@@ -110,6 +113,10 @@ table.data td.n { text-align: right; font-variant-numeric: tabular-nums; }
 #tip .k { display: inline-block; width: 12px; border-top: 2px solid; margin-right: 6px; vertical-align: middle; }
 #tip .h { color: var(--text-secondary); margin-bottom: 4px; }
 .empty { color: var(--text-secondary); font-size: 13px; }
+.sw { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: baseline; }
+table.data tr.dim td { color: var(--text-muted); }
+table.data tr.on td { background: var(--surface-2); }
+table.data th.n { text-align: right; }
 </style>
 </head>
 <body>
@@ -117,6 +124,7 @@ table.data td.n { text-align: right; font-variant-numeric: tabular-nums; }
   <h1 id="title"></h1>
   <p class="sub" id="subtitle"></p>
   <div class="filters">
+    <label>Поток <select id="f-cohort"><option value="">Все потоки</option></select></label>
     <label>Компания <select id="f-company"><option value="">Все компании</option></select></label>
     <label>Участник на графике <select id="f-person"><option value="">—</option></select></label>
   </div>
@@ -132,6 +140,16 @@ table.data td.n { text-align: right; font-variant-numeric: tabular-nums; }
     <h2>Прогресс по дням</h2>
     <div class="legend" id="line-legend"></div>
     <div id="line" class="chart"></div>
+  </section>
+
+  <section class="card" id="sec-cohorts" hidden>
+    <h2>Сравнение потоков</h2>
+    <p class="sub" id="cmp-sub">Сколько участников, средний процент и медиана, доля участников на каждом этапе сейчас</p>
+    <div class="tbl-wrap"><table class="data" id="cmp-table"></table></div>
+    <h2 style="margin-top:16px">Средний процент потока по дням</h2>
+    <p class="sub" id="cmp-axis"></p>
+    <div class="legend" id="cmp-legend"></div>
+    <div id="cmp-line" class="chart"></div>
   </section>
 
   <div class="grid2">
@@ -182,7 +200,19 @@ table.data td.n { text-align: right; font-variant-numeric: tabular-nums; }
   STAGE.finished = "Всё готово";
   var SVGNS = "http://www.w3.org/2000/svg";
   var last = H[H.length - 1];
-  var state = { company: "", person: "" };
+  var state = { company: "", cohort: "", person: "" };
+  // старые снимки: поток участника — поток снимка
+  H.forEach(function (s) {
+    s.cohorts = s.cohorts || {};
+    s.participants.forEach(function (p) { if (!p.cohort) p.cohort = s.cohort; if (!s.cohorts[p.cohort]) s.cohorts[p.cohort] = { start_date: null, expected: s.expected }; });
+  });
+  // все потоки по истории; цвет закреплён за потоком (по алфавиту), а не за местом в фильтре
+  var COHORTS = (function () { var o = {}; H.forEach(function (s) { s.participants.forEach(function (p) { o[p.cohort] = 1; }); }); return Object.keys(o).sort(function (a, b) { return a.localeCompare(b, "ru"); }); })();
+  var CAT = ["var(--series-1)", "var(--series-2)", "var(--cat-3)", "var(--cat-4)", "var(--cat-5)", "var(--cat-6)", "var(--cat-7)", "var(--cat-8)"];
+  function cohortColor(c) { var i = COHORTS.indexOf(c); return i >= 0 && i < CAT.length ? CAT[i] : "var(--others)"; }
+  function startOf(c) { for (var i = H.length - 1; i >= 0; i--) { var x = H[i].cohorts[c]; if (x && x.start_date) return x.start_date; } return null; }
+  function expectedOf(s) { if (state.cohort) { var x = s.cohorts[state.cohort]; return x ? x.expected : null; } return s.expected; }
+  function median(arr) { var v = arr.slice().sort(function (a, b) { return a - b; }), m = Math.floor(v.length / 2); return !v.length ? 0 : v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2; }
 
   function el(tag, attrs, text) {
     var e = document.createElement(tag);
@@ -198,7 +228,8 @@ table.data td.n { text-align: right; font-variant-numeric: tabular-nums; }
   function clear(n) { while (n.firstChild) n.removeChild(n.firstChild); }
   function fmt(v) { return Math.round(v) + "%"; }
   function dstr(ts) { var d = new Date(ts); return d.toLocaleDateString("ru-RU", { day: "numeric", month: "short" }); }
-  function visible(p) { return !state.company || p.company === state.company; }
+  function byCompany(p) { return !state.company || p.company === state.company; }
+  function visible(p) { return byCompany(p) && (!state.cohort || p.cohort === state.cohort); }
   function people() { return last.participants.filter(visible); }
   function okPeople() { return people().filter(function (p) { return !p.error; }); }
   function avg(arr) { return arr.length ? arr.reduce(function (a, b) { return a + b; }, 0) / arr.length : 0; }
@@ -237,7 +268,8 @@ table.data td.n { text-align: right; font-variant-numeric: tabular-nums; }
 
   // ---------- шапка и плитки ----------
   function header() {
-    document.getElementById("title").textContent = "Прогресс когорты «" + last.cohort + "»";
+    document.getElementById("title").textContent = state.cohort ? "Прогресс потока «" + state.cohort + "»" :
+      (COHORTS.length > 1 ? "Прогресс курса: все потоки (" + COHORTS.length + ")" : "Прогресс когорты «" + last.cohort + "»");
     document.getElementById("subtitle").textContent = "Снимок " + new Date(last.ts).toLocaleString("ru-RU") +
       " · снимков в истории: " + H.length + " · данные из репозиториев участников (только итоги проверок)";
   }
@@ -250,10 +282,15 @@ table.data td.n { text-align: right; font-variant-numeric: tabular-nums; }
       if (pp.length) delta = a - avg(pp.map(function (p) { return p.percent; }));
     }
     function count(kind) { return people().filter(function (p) { return (p.flags || []).some(function (f) { return f.kind === kind; }); }).length; }
+    var exp = expectedOf(last), lastCos = Object.keys(last.cohorts);
+    var expD = exp != null ? "по расписанию курса" : (!state.cohort && lastCos.length > 1 && lastCos.some(function (c) { return last.cohorts[c].expected != null; }) ? "разный по потокам — выберите поток" : "дата старта не задана");
+    var cosInView = {}; last.participants.filter(byCompany).forEach(function (p) { cosInView[p.cohort] = 1; });
+    var nCos = Object.keys(cosInView).length, total = last.participants.length;
     var list = [
       { l: "Средний прогресс", v: fmt(a), d: delta == null ? "" : (delta >= 0 ? "+" : "") + Math.round(delta) + " п. к прошлому снимку", hero: true },
-      { l: "План на сегодня", v: last.expected == null ? "—" : fmt(last.expected), d: last.expected == null ? "дата старта не задана" : "по расписанию курса" },
-      { l: "Участников", v: String(people().length), d: "" },
+      { l: "План на сегодня", v: exp == null ? "—" : fmt(exp), d: expD },
+      { l: "Участников", v: String(people().length), d: people().length === total ? "во всех потоках" : "всего во всех потоках: " + total },
+      { l: "Потоков", v: String(state.cohort ? 1 : nCos), d: state.cohort ? "из " + COHORTS.length + " · выбран фильтром" : (nCos === COHORTS.length ? "в отчёте" : "из " + COHORTS.length) },
       { l: "Впереди", v: String(count("ahead")), d: "" },
       { l: "Отстают", v: String(count("behind")), d: "" },
       { l: "Застряли", v: String(count("stalled")), d: "" }
@@ -276,7 +313,7 @@ table.data td.n { text-align: right; font-variant-numeric: tabular-nums; }
         "aria-label": p.name + ": " + fmt(p.percent) + ", этап " + (STAGE[p.stage] || "") });
       row.appendChild(el("div", { "class": "lb-rank" }, String(i + 1)));
       var nm = el("div", { "class": "lb-name" }); nm.appendChild(el("b", null, p.name));
-      nm.appendChild(el("span", null, [p.company, p.department].filter(Boolean).join(" · ") + (p.mode === "hub" ? " · хаб" : "")));
+      nm.appendChild(el("span", null, [p.company, p.department, COHORTS.length > 1 && !state.cohort ? p.cohort : ""].filter(Boolean).join(" · ") + (p.mode === "hub" ? " · хаб" : "")));
       row.appendChild(nm);
       row.appendChild(el("div", { "class": "stage-cell" }, p.error ? "нет данных" : STAGE[p.stage]));
       var bar = el("div", { "class": "lb-bar" }), tr = el("div", { "class": "track" }), fl = el("div", { "class": "fill" });
@@ -303,7 +340,7 @@ table.data td.n { text-align: right; font-variant-numeric: tabular-nums; }
     var pts = H.map(function (s) {
       var ps = s.participants.filter(function (p) { return ids.indexOf(p.id) >= 0 && !p.error; });
       var byId = {}; ps.forEach(function (p) { byId[p.id] = p.percent; });
-      return { t: new Date(s.ts).getTime(), ts: s.ts, avg: ps.length ? avg(ps.map(function (p) { return p.percent; })) : null, by: byId, exp: s.expected };
+      return { t: new Date(s.ts).getTime(), ts: s.ts, avg: ps.length ? avg(ps.map(function (p) { return p.percent; })) : null, by: byId, exp: expectedOf(s) };
     });
     var t0 = pts[0].t, t1 = pts[pts.length - 1].t; if (t1 === t0) { t0 -= 86400000; t1 += 86400000; }
     function X(t) { return m.l + (t - t0) / (t1 - t0) * (W - m.l - m.r); }
@@ -372,7 +409,7 @@ table.data td.n { text-align: right; font-variant-numeric: tabular-nums; }
     hit.addEventListener("pointerleave", function () { cross.setAttribute("visibility", "hidden"); hideTip(); });
     box.appendChild(svg);
     function leg(color, text, dash) { var s = el("span"), i = el("i"); i.style.borderTopColor = color; if (dash) i.style.borderTopStyle = "dashed"; s.appendChild(i); s.appendChild(document.createTextNode(text)); lg.appendChild(s); }
-    leg("var(--series-1)", "Среднее по когорте");
+    leg("var(--series-1)", state.cohort ? "Среднее по потоку" : (COHORTS.length > 1 ? "Среднее по всем потокам" : "Среднее по когорте"));
     if (sel) leg("var(--series-2)", sel.name);
     leg("var(--others)", "Остальные участники");
     if (hasExp) leg("var(--text-muted)", "План курса", true);
@@ -488,13 +525,13 @@ table.data td.n { text-align: right; font-variant-numeric: tabular-nums; }
   function table() {
     var t = document.getElementById("table"); clear(t);
     var hr = el("tr");
-    ["Участник", "Компания", "Отдел", "Режим", "Этап", "%", "Последний коммит, дн.", "Коммитов 7 дн.", "Веток", "Открытых PR", "Флаги"].forEach(function (h) { hr.appendChild(el("th", null, h)); });
+    ["Участник", "Поток", "Компания", "Отдел", "Подпапка", "Режим", "Этап", "%", "Последний коммит, дн.", "Коммитов 7 дн.", "Веток", "Открытых PR", "Флаги"].forEach(function (h) { hr.appendChild(el("th", null, h)); });
     var th = el("thead"); th.appendChild(hr); t.appendChild(th);
     var tb = el("tbody");
     people().slice().sort(function (a, b) { return b.percent - a.percent; }).forEach(function (p) {
       var a = p.activity || {}, tr = el("tr");
       function td(v, n) { tr.appendChild(el("td", n ? { "class": "n" } : null, v == null ? "—" : String(v))); }
-      td(p.name); td(p.company); td(p.department); td(p.mode === "hub" ? "хаб" : "свой продукт");
+      td(p.name); td(p.cohort); td(p.company); td(p.department); td(p.path || null); td(p.mode === "hub" ? "хаб" : "свой продукт");
       td(p.error ? "нет данных" : STAGE[p.stage]); td(Math.round(p.percent), true);
       td(a.days_since_commit, true); td(a.commits_7d, true); td(a.branches, true); td(a.open_prs, true);
       td((p.flags || []).map(function (f) { return f.label; }).join(", "));
@@ -503,12 +540,133 @@ table.data td.n { text-align: right; font-variant-numeric: tabular-nums; }
     t.appendChild(tb);
   }
 
+
+  // ---------- сравнение потоков ----------
+  var STAGES_ALL = META.stages.map(function (s) { return s[0]; }).concat(["finished"]);
+  function cohortsBlock() {
+    var sec = document.getElementById("sec-cohorts");
+    if (COHORTS.length < 2) { sec.hidden = true; return; }
+    sec.hidden = false;
+    var t = document.getElementById("cmp-table"); clear(t);
+    var hr = el("tr");
+    hr.appendChild(el("th", null, "Поток"));
+    ["Участников", "Средний", "Медиана", "Ожидается"].forEach(function (h) { hr.appendChild(el("th", { "class": "n" }, h)); });
+    STAGES_ALL.forEach(function (s) { hr.appendChild(el("th", { "class": "n", title: "Доля участников потока, которые сейчас на этом этапе" }, STAGE[s])); });
+    var th = el("thead"); th.appendChild(hr); t.appendChild(th);
+    var tb = el("tbody"), any = false;
+    COHORTS.forEach(function (c) {
+      var ps = last.participants.filter(function (p) { return byCompany(p) && p.cohort === c; });
+      if (!ps.length) return;
+      any = true;
+      var ok = ps.filter(function (p) { return !p.error; }), vals = ok.map(function (p) { return p.percent; });
+      var info = last.cohorts[c] || {};
+      var tr = el("tr", { "class": state.cohort ? (state.cohort === c ? "on" : "dim") : "" });
+      var first = el("td"), sw = el("span", { "class": "sw", "aria-hidden": "true" }); sw.style.background = cohortColor(c);
+      first.appendChild(sw); first.appendChild(document.createTextNode(c)); tr.appendChild(first);
+      function td(v) { tr.appendChild(el("td", { "class": "n" }, v)); }
+      td(String(ps.length)); td(ok.length ? fmt(avg(vals)) : "—"); td(ok.length ? fmt(median(vals)) : "—");
+      td(info.expected == null ? "—" : fmt(info.expected));
+      STAGES_ALL.forEach(function (s) {
+        var n = ok.filter(function (p) { return p.stage === s; }).length;
+        td(ok.length ? Math.round(n / ok.length * 100) + "%" : "—");
+      });
+      tr.style.cursor = "pointer";
+      tr.addEventListener("click", function () { setCohort(state.cohort === c ? "" : c); });
+      tb.appendChild(tr);
+    });
+    t.appendChild(tb);
+    if (!any) { clear(t); t.appendChild(el("caption", { "class": "empty" }, "Нет участников под фильтром")); }
+    cohortLines();
+  }
+  function cohortLines() {
+    var box = document.getElementById("cmp-line"); clear(box);
+    var lg = document.getElementById("cmp-legend"); clear(lg);
+    var axisNote = document.getElementById("cmp-axis");
+    var shown = COHORTS.filter(function (c) { return H.some(function (s) { return s.participants.some(function (p) { return p.cohort === c && byCompany(p) && !p.error; }); }); });
+    if (!shown.length) { axisNote.textContent = ""; box.appendChild(el("p", { "class": "empty" }, "Нет данных")); return; }
+    var byDay = shown.every(function (c) { return !!startOf(c); });
+    axisNote.textContent = byDay ? "По горизонтали — дни от старта потока (неделя 1, день 0), чтобы потоки с разной датой старта сравнивались честно" :
+      "По горизонтали — календарные даты: дата старта задана не для всех потоков (weights.yml → schedule.cohorts)";
+    var series = shown.map(function (c) {
+      var s0 = byDay ? Date.parse(startOf(c) + "T00:00:00Z") : 0, pts = [];
+      H.forEach(function (s) {
+        var ok = s.participants.filter(function (p) { return p.cohort === c && byCompany(p) && !p.error; });
+        if (!ok.length) return;
+        var t = new Date(s.ts).getTime();
+        pts.push({ x: byDay ? (t - s0) / 86400000 : t, ts: s.ts, v: avg(ok.map(function (p) { return p.percent; })), n: ok.length });
+      });
+      return { c: c, pts: pts, color: cohortColor(c) };
+    }).filter(function (s) { return s.pts.length; });
+    var xs = []; series.forEach(function (s) { s.pts.forEach(function (p) { xs.push(p.x); }); });
+    var x0 = Math.min.apply(null, xs), x1 = Math.max.apply(null, xs);
+    var pad = byDay ? 1 : 86400000; if (x1 === x0) { x0 -= pad; x1 += pad; }
+    var W = Math.max(280, box.clientWidth), Hh = 240, m = { l: 36, r: 16, t: 12, b: 28 };
+    function X(x) { return m.l + (x - x0) / (x1 - x0) * (W - m.l - m.r); }
+    function Y(v) { return m.t + (100 - v) / 100 * (Hh - m.t - m.b); }
+    var svg = sv("svg", { width: W, height: Hh, viewBox: "0 0 " + W + " " + Hh, role: "img",
+      "aria-label": "Средний процент по потокам " + (byDay ? "по дням от старта" : "по датам") });
+    [0, 25, 50, 75, 100].forEach(function (v) {
+      var g = sv("line", { x1: m.l, x2: W - m.r, y1: Y(v), y2: Y(v), "stroke-width": 1 });
+      g.style.stroke = v === 0 ? "var(--axis)" : "var(--grid)"; svg.appendChild(g);
+      var tx = sv("text", { x: m.l - 6, y: Y(v) + 4, "text-anchor": "end" }); tx.textContent = v + "%"; svg.appendChild(tx);
+    });
+    function xLabel(x) { return byDay ? "день " + Math.round(x) : dstr(new Date(x).toISOString()); }
+    var nT = Math.max(2, Math.min(6, Math.floor((W - m.l - m.r) / 80)));
+    for (var i = 0; i < nT; i++) {
+      var xv = x0 + (x1 - x0) * i / (nT - 1);
+      var tx = sv("text", { x: X(xv), y: Hh - 8, "text-anchor": i === 0 ? "start" : (i === nT - 1 ? "end" : "middle") });
+      tx.textContent = xLabel(xv); svg.appendChild(tx);
+    }
+    var order = series.slice().sort(function (a, b) { return (a.c === state.cohort) - (b.c === state.cohort); });
+    order.forEach(function (s) {
+      var dim = state.cohort && s.c !== state.cohort;
+      var d = s.pts.map(function (p, k) { return (k ? "L" : "M") + X(p.x).toFixed(1) + " " + Y(p.v).toFixed(1); }).join("");
+      var e = sv("path", { d: d, fill: "none", "stroke-width": dim ? 1.5 : 2, "stroke-linejoin": "round", "stroke-linecap": "round", "data-cohort": s.c });
+      e.style.stroke = s.color; if (dim) e.style.opacity = "0.35"; svg.appendChild(e);
+      if (s.pts.length === 1) { var c = sv("circle", { cx: X(s.pts[0].x), cy: Y(s.pts[0].v), r: 4 }); c.style.fill = s.color; if (dim) c.style.opacity = "0.35"; svg.appendChild(c); }
+    });
+    // подписи на конце линий (до 4 потоков), без наложений
+    if (series.length <= 4) {
+      var labs = series.map(function (s) { var lp = s.pts[s.pts.length - 1]; return { s: s, x: X(lp.x), y: Y(lp.v), v: lp.v }; })
+        .sort(function (a, b) { return a.y - b.y; });
+      for (var k = 1; k < labs.length; k++) if (labs[k].y - labs[k - 1].y < 13) labs[k].y = labs[k - 1].y + 13;
+      labs.forEach(function (L) {
+        var t = sv("text", { x: Math.min(W - m.r, L.x) - 6, y: L.y - 6, "text-anchor": "end" });
+        t.style.fill = "var(--text-primary)"; t.textContent = fmt(L.v); svg.appendChild(t);
+      });
+    }
+    var cross = sv("line", { y1: m.t, y2: Hh - m.b, "stroke-width": 1, visibility: "hidden" }); cross.style.stroke = "var(--axis)"; svg.appendChild(cross);
+    var hit = sv("rect", { x: m.l, y: 0, width: W - m.l - m.r, height: Hh, fill: "transparent" }); svg.appendChild(hit);
+    var tol = byDay ? 3.5 : 43200000;
+    hit.addEventListener("pointermove", function (e) {
+      var r = svg.getBoundingClientRect(), px = (e.clientX - r.left) * W / r.width, best = xs[0];
+      xs.forEach(function (x) { if (Math.abs(X(x) - px) < Math.abs(X(best) - px)) best = x; });
+      cross.setAttribute("x1", X(best)); cross.setAttribute("x2", X(best)); cross.setAttribute("visibility", "visible");
+      showTip(e, function (t) {
+        t.appendChild(el("div", { "class": "h" }, xLabel(best)));
+        series.forEach(function (s) {
+          var q = null; s.pts.forEach(function (p) { if (Math.abs(p.x - best) <= tol && (!q || Math.abs(p.x - best) < Math.abs(q.x - best))) q = p; });
+          if (q) tipRow(t, s.c + " (" + q.n + ")", fmt(q.v), s.color);
+        });
+      });
+    });
+    hit.addEventListener("pointerleave", function () { cross.setAttribute("visibility", "hidden"); hideTip(); });
+    box.appendChild(svg);
+    series.forEach(function (s) {
+      var sp = el("span"), i = el("i"); i.style.borderTopColor = s.color; if (state.cohort && s.c !== state.cohort) sp.style.opacity = "0.6";
+      sp.appendChild(i); sp.appendChild(document.createTextNode(s.c)); lg.appendChild(sp);
+    });
+  }
+
   // ---------- фильтры ----------
   function filters() {
     var fc = document.getElementById("f-company"), fp = document.getElementById("f-person");
     var cos = {}; last.participants.forEach(function (p) { if (p.company) cos[p.company] = 1; });
     Object.keys(cos).sort().forEach(function (c) { fc.appendChild(el("option", { value: c }, c)); });
     fc.addEventListener("change", function () { state.company = fc.value; fillPeople(); renderAll(); });
+    var fk = document.getElementById("f-cohort");
+    COHORTS.forEach(function (c) { fk.appendChild(el("option", { value: c }, c)); });
+    fk.addEventListener("change", function () { setCohort(fk.value); });
     fp.addEventListener("change", function () { state.person = fp.value; renderAll(); });
     fillPeople();
   }
@@ -519,9 +677,10 @@ table.data td.n { text-align: right; font-variant-numeric: tabular-nums; }
     fp.value = state.person;
   }
 
-  function renderAll() { tiles(); leaderboard(); lineChart(); funnel(); companies(); lists(); heat(); table(); }
+  function setCohort(c) { state.cohort = c; document.getElementById("f-cohort").value = c; fillPeople(); header(); renderAll(); }
+  function renderAll() { tiles(); leaderboard(); lineChart(); cohortsBlock(); funnel(); companies(); lists(); heat(); table(); }
   header(); filters(); renderAll();
-  var rt; window.addEventListener("resize", function () { clearTimeout(rt); rt = setTimeout(function () { lineChart(); funnel(); companies(); }, 150); });
+  var rt; window.addEventListener("resize", function () { clearTimeout(rt); rt = setTimeout(function () { lineChart(); cohortsBlock(); funnel(); companies(); }, 150); });
 })();
 </script>
 </body>

@@ -44,7 +44,7 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-VERSION = "1.0"
+VERSION = "1.1"
 UA = "airl-progress/" + VERSION
 
 # ---------------------------------------------------------------------------
@@ -242,6 +242,28 @@ def parse_repo(value: str) -> tuple[str, str]:
     return parts[0], parts[1]
 
 
+def parse_repo_loose(value: str) -> tuple[str, str]:
+    """Как parse_repo, но разрешает имя без владельца (`hub-demo`) — для режима --local."""
+    try:
+        return parse_repo(value)
+    except ValueError:
+        v = re.sub(r"^https?://[^/]+/", "", (value or "").strip()).removesuffix(".git").strip("/")
+        if v and "/" not in v and re.match(r"^[\w.\-]+$", v):
+            return "", v
+        raise
+
+
+def clean_subpath(value: str) -> str:
+    """Подпапка внутри репозитория: без ведущих/концевых «/», без «..»."""
+    v = (value or "").strip().replace("\\", "/").strip("/")
+    v = re.sub(r"/+", "/", v)
+    if v in ("", "."):
+        return ""
+    if any(x == ".." for x in v.split("/")):
+        raise ValueError(f"подпапка {value!r}: «..» не допускается")
+    return v.removeprefix("./")
+
+
 def load_roster(path: str) -> list[dict]:
     p = Path(path)
     if p.suffix in (".yml", ".yaml"):
@@ -255,14 +277,17 @@ def load_roster(path: str) -> list[dict]:
         r = {k.strip(): ("" if v is None else str(v).strip()) for k, v in r.items() if k}
         if not r.get("repo") or r.get("name", "").startswith("#"):
             continue
-        owner, name = parse_repo(r["repo"])
-        pid = f"{owner}/{name}"
+        owner, name = parse_repo_loose(r["repo"])
+        sub = clean_subpath(r.get("path", ""))
+        pid = f"{owner}/{name}" if owner else name
+        if sub:
+            pid += ":" + sub
         if pid in seen:
             continue
         seen.add(pid)
         mode = (r.get("mode") or "solo").lower()
         out.append({
-            "id": pid, "owner": owner, "repo": name,
+            "id": pid, "owner": owner, "repo": name, "path": sub,
             "name": r.get("name") or pid, "company": r.get("company", ""),
             "department": r.get("department", ""),
             "mode": "hub" if mode == "hub" else "solo",
@@ -277,10 +302,36 @@ def load_roster(path: str) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 class LocalRepo:
-    """Репозиторий в локальной папке (клон). Для тестов и работы без сети."""
+    """Репозиторий в локальной папке (клон). Для тестов и работы без сети.
 
-    def __init__(self, path: Path, branch: str, now: dt.datetime):
-        self.path, self.branch, self.now = path, branch, now
+    `path` — папка клона или любая подпапка внутри git-репозитория; `sub` —
+    подпапка сервиса (колонка `path` в списке). Проверки идут относительно
+    `path/sub`, активность — по коммитам, которые трогали эту подпапку.
+    """
+
+    def __init__(self, path: Path, branch: str, now: dt.datetime, sub: str = ""):
+        self.branch, self.now, self.sub = branch, now, sub
+        self.base = path
+        self.path = path / sub if sub else path
+        if not self.path.is_dir():
+            raise ApiError(f"в папке {path} нет подпапки {sub}")
+        top = self._git_at(path, "rev-parse", "--show-toplevel")
+        self.git_root = Path(top) if top else None
+        self.prefix = ""
+        if self.git_root:
+            try:
+                rel = self.path.resolve().relative_to(self.git_root.resolve()).as_posix()
+                self.prefix = "" if rel == "." else rel
+            except ValueError:
+                self.prefix = ""
+
+    @staticmethod
+    def _git_at(where: Path, *args) -> str:
+        try:
+            r = subprocess.run(["git", "-C", str(where), *args], capture_output=True, text=True)
+        except OSError:
+            return ""
+        return r.stdout.strip() if r.returncode == 0 else ""
 
     def files(self) -> dict[str, dict]:
         res = {}
@@ -296,6 +347,13 @@ class LocalRepo:
                 res[rel] = {"size": size, "sha": None}
         return res
 
+    def root_ci(self) -> bool:
+        """CI в корне репозитория (для сервиса в подпапке монорепозитория)."""
+        if not self.prefix or not self.git_root:
+            return False
+        wf = self.git_root / ".github" / "workflows"
+        return wf.is_dir() and any(f.suffix in (".yml", ".yaml") for f in wf.iterdir())
+
     def read(self, path: str, limit: int = MAX_TEXT) -> str | None:
         full = self.path / path
         try:
@@ -306,17 +364,17 @@ class LocalRepo:
             return None
 
     def _git(self, *args) -> str:
-        r = subprocess.run(["git", "-C", str(self.path), *args], capture_output=True, text=True)
-        return r.stdout.strip() if r.returncode == 0 else ""
+        return self._git_at(self.git_root or self.path, *args)
 
     def activity(self) -> dict:
-        if not (self.path / ".git").exists():
+        if not self.git_root:
             return {"last_commit": None, "commits_7d": None, "branches": None, "open_prs": None}
         ref = self.branch or "HEAD"
-        last = self._git("log", "-1", "--format=%cI", ref)
+        lim = ["--", self.prefix] if self.prefix else []
+        last = self._git("log", "-1", "--format=%cI", ref, *lim)
         since = (self.now - dt.timedelta(days=7)).isoformat()
         until = self.now.isoformat()
-        cnt = self._git("rev-list", "--count", f"--since={since}", f"--until={until}", ref)
+        cnt = self._git("rev-list", "--count", f"--since={since}", f"--until={until}", ref, *lim)
         br = self._git("branch", "--list", "--format=%(refname:short)")
         return {"last_commit": last or None, "commits_7d": int(cnt or 0),
                 "branches": len([b for b in br.splitlines() if b.strip()]) or None,
@@ -420,8 +478,8 @@ class GitHub:
 
 
 class GitHubRepo:
-    def __init__(self, gh: GitHub, owner: str, name: str, branch: str, now: dt.datetime):
-        self.gh, self.owner, self.name, self.now = gh, owner, name, now
+    def __init__(self, gh: GitHub, owner: str, name: str, branch: str, now: dt.datetime, sub: str = ""):
+        self.gh, self.owner, self.name, self.now, self.sub = gh, owner, name, now, sub
         self.p = f"/repos/{urllib.parse.quote(owner)}/{urllib.parse.quote(name)}"
         meta = gh.json(self.p)
         if meta is None:
@@ -434,11 +492,13 @@ class GitHubRepo:
         c = b["commit"].get("commit", {})
         self.last_commit = (c.get("committer") or c.get("author") or {}).get("date")
         self._files = None
+        self._all = None
         self.rc = gh.cache.setdefault("repos", {}).setdefault(f"{owner}/{name}", {})
 
-    def files(self) -> dict[str, dict]:
-        if self._files is not None:
-            return self._files
+    def all_files(self) -> dict[str, dict]:
+        """Полный список файлов ветки (с ETag; кеш — общий для всех сервисов репозитория)."""
+        if self._all is not None:
+            return self._all
         tree_cache = self.rc.get("tree") or {}
         etag = tree_cache.get("etag") if tree_cache.get("head") == self.head_sha else None
         status, body, hdrs = self.gh._req(f"{self.p}/git/trees/{self.head_sha}?recursive=1", etag=etag)
@@ -457,8 +517,25 @@ class GitHubRepo:
             self.rc["tree"] = {"head": self.head_sha, "etag": hdrs.get("etag"), "files": files}
         else:
             raise ApiError(f"не удалось прочитать список файлов (код {status})")
+        self._all = files
+        return files
+
+    def files(self) -> dict[str, dict]:
+        if self._files is not None:
+            return self._files
+        files = self.all_files()
+        if self.sub:
+            pre = self.sub + "/"
+            files = {k[len(pre):]: v for k, v in files.items() if k.startswith(pre)}
+            if not files:
+                raise ApiError(f"в репозитории нет подпапки {self.sub}")
         self._files = files
         return files
+
+    def root_ci(self) -> bool:
+        if not self.sub:
+            return False
+        return any(re.match(r"\.github/workflows/[^/]+\.ya?ml$", k) for k in self.all_files())
 
     def read(self, path: str, limit: int = MAX_TEXT) -> str | None:
         f = self.files().get(path)
@@ -472,10 +549,19 @@ class GitHubRepo:
     def activity(self) -> dict:
         since = (self.now - dt.timedelta(days=7)).strftime("%Y-%m-%dT%H:%M:%SZ")
         q = urllib.parse.quote(self.branch, safe="")
-        commits = self.gh.json(f"{self.p}/commits?sha={q}&since={since}&per_page=100") or []
+        pq = f"&path={urllib.parse.quote(self.sub, safe='/')}" if self.sub else ""
+        commits = self.gh.json(f"{self.p}/commits?sha={q}{pq}&since={since}&per_page=100") or []
+        last = self.last_commit
+        if self.sub:
+            # последний коммит, который трогал подпапку сервиса
+            lastc = self.gh.json(f"{self.p}/commits?sha={q}{pq}&per_page=1") or []
+            last = None
+            if lastc:
+                c = lastc[0].get("commit") or {}
+                last = (c.get("committer") or c.get("author") or {}).get("date")
         branches = self.gh.json(f"{self.p}/branches?per_page=100") or []
         pulls = self.gh.json(f"{self.p}/pulls?state=open&per_page=100") or []
-        return {"last_commit": self.last_commit, "commits_7d": len(commits),
+        return {"last_commit": last, "commits_7d": len(commits),
                 "branches": len(branches), "open_prs": len(pulls)}
 
 
@@ -720,7 +806,10 @@ def evaluate(src, part: dict, cache_repo: dict, live: bool) -> dict:
     docker = any(Path(p).name.lower() in {"dockerfile", "docker-compose.yml", "docker-compose.yaml",
                                           "compose.yml", "compose.yaml"} for p in files)
     r["docker"] = 1.0 if docker else 0.0
-    r["ci"] = 1.0 if any(re.match(r"\.github/workflows/[^/]+\.ya?ml$", p) for p in files) else 0.0
+    ci = any(re.match(r"\.github/workflows/[^/]+\.ya?ml$", p) for p in files)
+    if not ci and hasattr(src, "root_ci"):
+        ci = src.root_ci()          # сервис в подпапке: CI обычно в корне монорепозитория
+    r["ci"] = 1.0 if ci else 0.0
     dv = _find(files, "DEVOPS.md", "DEPLOY.md")
     r["devops_md"] = 0.0 if not dv else (1.0 if files[dv]["size"] >= 300 else 0.5)
     rv = _find(files, "REVIEW.md")
@@ -768,14 +857,23 @@ def score(items: dict, cfg: dict) -> dict:
             "stage_done": done, "stage": current}
 
 
-def expected_percent(cfg: dict, now: dt.datetime) -> float | None:
+def cohort_schedule(cfg: dict, cohort: str | None = None) -> tuple[str, list]:
+    """Дата старта и план для потока: `schedule.cohorts.<имя>` или общий `schedule`."""
     sch = cfg.get("schedule") or {}
-    start = str(sch.get("start_date") or "").strip()
-    exp = sch.get("expected_end_of_week") or []
+    own = ((sch.get("cohorts") or {}).get(cohort) or {}) if cohort else {}
+    if not isinstance(own, dict):
+        own = {}
+    start = str(own.get("start_date") or sch.get("start_date") or "").strip()
+    exp = own.get("expected_end_of_week") or sch.get("expected_end_of_week") or []
+    return start, exp
+
+
+def expected_percent(cfg: dict, now: dt.datetime, cohort: str | None = None) -> float | None:
+    start, exp = cohort_schedule(cfg, cohort)
     if not start or not exp:
         return None
     try:
-        d0 = dt.datetime.fromisoformat(start).replace(tzinfo=dt.timezone.utc)
+        d0 = dt.datetime.fromisoformat(start[:10]).replace(tzinfo=dt.timezone.utc)
     except ValueError:
         return None
     days = (now - d0).total_seconds() / 86400.0
@@ -800,10 +898,14 @@ def parse_ts(s: str | None) -> dt.datetime | None:
 
 
 def flags_for(rows: list[dict], history: list[dict], cfg: dict, now: dt.datetime) -> None:
+    """Флаги участника. План и середина (медиана) считаются внутри его потока."""
     th = cfg["thresholds"]
-    exp = expected_percent(cfg, now)
-    pcts = sorted(r["percent"] for r in rows if not r.get("error"))
-    median = pcts[len(pcts) // 2] if pcts else 0.0
+    exp_by, med_by, n_by = {}, {}, {}
+    for c in {r.get("cohort", "") for r in rows}:
+        exp_by[c] = expected_percent(cfg, now, c or None)
+        pcts = sorted(r["percent"] for r in rows if not r.get("error") and r.get("cohort", "") == c)
+        med_by[c] = pcts[len(pcts) // 2] if pcts else 0.0
+        n_by[c] = len(pcts)
     for r in rows:
         fl = []
         if r.get("error"):
@@ -830,11 +932,13 @@ def flags_for(rows: list[dict], history: list[dict], cfg: dict, now: dt.datetime
                 stall_n = max(stall_n, days_flat)
         if stall_n:
             fl.append({"kind": "stalled", "days": stall_n, "label": f"застрял {stall_n} дн."})
+        c = r.get("cohort", "")
+        exp, median = exp_by[c], med_by[c]
         ref = exp if exp is not None else median
         r["expected"] = round(exp, 1) if exp is not None else None
         behind_m = th["behind_margin"] if exp is not None else th["median_margin"]
         ahead_m = th["ahead_margin"] if exp is not None else th["median_margin"]
-        if len(pcts) >= 2 or exp is not None:
+        if n_by[c] >= 2 or exp is not None:
             if r["percent"] < ref - behind_m:
                 fl.append({"kind": "behind", "label": "отстаёт"})
             elif r["percent"] >= ref + ahead_m:
@@ -873,8 +977,17 @@ def load_history(path: Path) -> list[dict]:
     return out
 
 
+def local_candidates(base: Path, p: dict) -> list[Path]:
+    o, n = p.get("owner"), p["repo"]
+    c = [base / f"{o}__{n}", base / o / n] if o else []
+    c.append(base / n)
+    if not o:
+        c += sorted(x for x in base.glob(f"*__{n}") if x.is_dir())
+    return c
+
+
 def find_local(base: Path, p: dict) -> Path | None:
-    for c in (base / f"{p['owner']}__{p['repo']}", base / p["owner"] / p["repo"], base / p["repo"]):
+    for c in local_candidates(base, p):
         if c.is_dir():
             return c
     return None
@@ -894,17 +1007,23 @@ def collect(args, cfg) -> dict:
         print(f"GitHub: доступ — {gh.mode()}", file=sys.stderr)
     rows = []
     for p in roster:
-        row = {k: p[k] for k in ("id", "name", "company", "department", "mode", "cohort")}
+        row = {k: p[k] for k in ("id", "name", "company", "department", "mode", "cohort", "path")}
+        if args.cohort and not row["cohort"]:
+            row["cohort"] = args.cohort
         row["live"] = bool(p.get("live_url"))
         try:
             if args.local:
                 path = find_local(Path(args.local), p)
                 if not path:
-                    raise ApiError("нет локальной папки репозитория")
-                src = LocalRepo(path, p["branch"], now)
+                    tried = ", ".join(str(x) for x in local_candidates(Path(args.local), p)[:3])
+                    raise ApiError(f"нет локальной папки репозитория (искали: {tried})")
+                src = LocalRepo(path, p["branch"], now, p.get("path", ""))
                 rc = {}
             else:
-                src = GitHubRepo(gh, p["owner"], p["repo"], p["branch"], now)
+                if not p["owner"]:
+                    raise ApiError(f"в адресе «{p['repo']}» нет владельца — для GitHub нужно owner/name "
+                                   "или ссылка (имя без владельца работает только с --local)")
+                src = GitHubRepo(gh, p["owner"], p["repo"], p["branch"], now, p.get("path", ""))
                 rc = cache.setdefault("repos", {}).setdefault(p["id"], {})
             items = evaluate(src, p, rc, live=not args.no_live)
             row["items"] = items
@@ -915,6 +1034,14 @@ def collect(args, cfg) -> dict:
                         "stage": "start", "activity": {}, "error": str(e)})
             print(f"  {p['id']}: {e}", file=sys.stderr)
         rows.append(row)
+    names = sorted({r["cohort"] for r in rows if r.get("cohort")})
+    if not names:
+        names = [args.cohort or "VibeOps"]
+        for r in rows:
+            r["cohort"] = names[0]
+    else:
+        for r in rows:
+            r["cohort"] = r.get("cohort") or names[0]
     history = load_history(data_path)
     flags_for(rows, history, cfg, now)
     for r in rows:
@@ -923,10 +1050,17 @@ def collect(args, cfg) -> dict:
         cache_path.parent.mkdir(parents=True, exist_ok=True)
         cache_path.write_text(json.dumps(cache, ensure_ascii=False), encoding="utf-8")
         print(f"GitHub: запросов {gh.calls}, осталось в лимите {gh.remaining}", file=sys.stderr)
-    cohort = args.cohort or next((r["cohort"] for r in rows if r.get("cohort")), "") or "VibeOps"
-    snap = {"ts": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "version": VERSION, "cohort": cohort,
-            "expected": (round(expected_percent(cfg, now), 1) if expected_percent(cfg, now) is not None else None),
-            "weights_hash": hashlib.sha256(json.dumps(cfg, sort_keys=True).encode()).hexdigest()[:12],
+    cohorts = {}
+    for c in names:
+        start, _ = cohort_schedule(cfg, c)
+        e = expected_percent(cfg, now, c)
+        cohorts[c] = {"start_date": start[:10] or None, "expected": None if e is None else round(e, 1)}
+    exps = {v["expected"] for v in cohorts.values()}
+    title = args.cohort or (names[0] if len(names) == 1 else "Все потоки")
+    snap = {"ts": now.strftime("%Y-%m-%dT%H:%M:%SZ"), "version": VERSION, "cohort": title,
+            "cohorts": cohorts,
+            "expected": next(iter(exps)) if len(exps) == 1 else None,
+            "weights_hash": hashlib.sha256(json.dumps(cfg, sort_keys=True, default=str).encode()).hexdigest()[:12],
             "participants": rows}
     data_path.parent.mkdir(parents=True, exist_ok=True)
     with data_path.open("a", encoding="utf-8") as f:
@@ -944,18 +1078,77 @@ def stage_name(s: str | None) -> str:
     return STAGE_LABEL.get(s or "", "—")
 
 
+def normalize_history(hist: list[dict]) -> list[dict]:
+    """Старые снимки (один поток на снимок): поток берём из `snap["cohort"]`."""
+    for snap in hist:
+        base = snap.get("cohort") or "VibeOps"
+        for r in snap.get("participants", []):
+            if not r.get("cohort"):
+                r["cohort"] = base
+        if not isinstance(snap.get("cohorts"), dict):
+            names = sorted({r["cohort"] for r in snap.get("participants", [])}) or [base]
+            snap["cohorts"] = {c: {"start_date": None, "expected": snap.get("expected")} for c in names}
+    return hist
+
+
+def median(vals: list[float]) -> float:
+    v = sorted(vals)
+    if not v:
+        return 0.0
+    m = len(v) // 2
+    return v[m] if len(v) % 2 else (v[m - 1] + v[m]) / 2
+
+
+def cohort_stats(snap: dict) -> list[dict]:
+    """По каждому потоку: участников, средний и медиана %, доля на каждом этапе."""
+    out = []
+    for c in sorted({r["cohort"] for r in snap["participants"]}):
+        rows = [r for r in snap["participants"] if r["cohort"] == c]
+        ok = [r["percent"] for r in rows if not r.get("error")]
+        stages = {}
+        for st in STAGE_ORDER + ["finished"]:
+            n = sum(1 for r in rows if not r.get("error") and r.get("stage") == st)
+            stages[st] = n / len(ok) if ok else 0.0
+        info = (snap.get("cohorts") or {}).get(c) or {}
+        out.append({"cohort": c, "n": len(rows), "ok": len(ok),
+                    "avg": sum(ok) / len(ok) if ok else 0.0, "median": median(ok),
+                    "stages": stages, "expected": info.get("expected"),
+                    "start_date": info.get("start_date")})
+    return out
+
+
+def cohort_line(c: dict) -> str:
+    plan = f", план {c['expected']:.0f}%" if c.get("expected") is not None else ""
+    return f"{c['cohort']} — {c['n']} уч., средний {c['avg']:.0f}%, медиана {c['median']:.0f}%{plan}"
+
+
 def summary_md(hist: list[dict]) -> str:
     snap = hist[-1]
     rows = sorted(snap["participants"], key=lambda r: -r["percent"])
     ok = [r for r in rows if not r.get("error")]
     avg = sum(r["percent"] for r in ok) / len(ok) if ok else 0
     prev = hist[-2] if len(hist) > 1 else None
-    lines = [f"# Прогресс когорты «{snap['cohort']}»", "",
+    cs = cohort_stats(snap)
+    head = (f"# Прогресс когорты «{snap['cohort']}»" if len(cs) == 1 else
+            f"# Прогресс курса: все потоки ({len(cs)})")
+    lines = [head, "",
              f"Снимок: {snap['ts'][:16].replace('T', ' ')} UTC · участников: {len(rows)} · "
+             + (f"потоков: {len(cs)} · " if len(cs) > 1 else "") +
              f"средний прогресс: **{avg:.0f}%**" +
              (f" · ожидается по плану: {snap['expected']:.0f}%" if snap.get("expected") is not None else ""), ""]
-    lines += ["| # | Участник | Компания | Этап | % | Δ к прошлому | Коммитов за 7 дн. | Флаги |",
-              "|---|---|---|---|---|---|---|---|"]
+    if len(cs) > 1:
+        lines += ["## Сравнение потоков", "",
+                  "| Поток | Участников | Средний % | Медиана % | Ожидается % | " +
+                  " | ".join(stage_name(st) for st in STAGE_ORDER + ["finished"]) + " |",
+                  "|---|---|---|---|---|" + "---|" * (len(STAGE_ORDER) + 1)]
+        for c in cs:
+            lines.append(f"| {c['cohort']} | {c['n']} | {c['avg']:.0f} | {c['median']:.0f} | "
+                         f"{'' if c['expected'] is None else format(c['expected'], '.0f')} | " +
+                         " | ".join(f"{c['stages'][st] * 100:.0f}%" for st in STAGE_ORDER + ["finished"]) + " |")
+        lines.append("")
+    multi = len(cs) > 1
+    lines += ["| # | Участник | " + ("Поток | " if multi else "") + "Компания | Этап | % | Δ к прошлому | Коммитов за 7 дн. | Флаги |",
+              "|---|---|" + ("---|" if multi else "") + "---|---|---|---|---|---|"]
     for i, r in enumerate(rows, 1):
         d = ""
         if prev:
@@ -964,7 +1157,7 @@ def summary_md(hist: list[dict]) -> str:
                 d = f"{r['percent'] - pr['percent']:+.0f}"
         fl = ", ".join(f["label"] for f in r.get("flags", []))
         c7 = r.get("activity", {}).get("commits_7d")
-        lines.append(f"| {i} | {r['name']} | {r['company']} | {stage_name(r['stage'])} | "
+        lines.append(f"| {i} | {r['name']} | " + (f"{r['cohort']} | " if multi else "") + f"{r['company']} | {stage_name(r['stage'])} | "
                      f"{r['percent']:.0f} | {d} | {'' if c7 is None else c7} | {fl} |")
     stalled = [r for r in rows if any(f["kind"] in ("stalled", "behind", "error") for f in r.get("flags", []))]
     lines += ["", "## Кому помочь", ""]
@@ -1008,9 +1201,13 @@ def telegram_text(hist: list[dict]) -> str:
     rows = sorted(snap["participants"], key=lambda r: -r["percent"])
     ok = [r for r in rows if not r.get("error")]
     avg = sum(r["percent"] for r in ok) / len(ok) if ok else 0
+    cs = cohort_stats(snap)
     out = [f"Прогресс «{snap['cohort']}» на {snap['ts'][:10]}",
-           f"Средний: {avg:.0f}%" + (f" (план {snap['expected']:.0f}%)" if snap.get("expected") is not None else ""),
-           ""]
+           f"Участников: {len(rows)}" + (f", потоков: {len(cs)}" if len(cs) > 1 else "") +
+           f" · средний: {avg:.0f}%" + (f" (план {snap['expected']:.0f}%)" if snap.get("expected") is not None else "")]
+    if len(cs) > 1:
+        out += ["• " + cohort_line(c) for c in cs]
+    out.append("")
     top = [r for r in rows if any(f["kind"] == "ahead" for f in r.get("flags", []))][:5]
     if top:
         out.append("Впереди: " + ", ".join(f"{r['name']} {r['percent']:.0f}%" for r in top))
@@ -1031,9 +1228,11 @@ def telegram_text(hist: list[dict]) -> str:
 def render_html(hist: list[dict]) -> str:
     tpl = (Path(__file__).resolve().parent.parent / "templates" / "report.html").read_text(encoding="utf-8")
     keep = []
-    for snap in hist[-120:]:
+    for snap in normalize_history(hist)[-120:]:
         keep.append({"ts": snap["ts"], "cohort": snap["cohort"], "expected": snap.get("expected"),
+                     "cohorts": snap.get("cohorts") or {},
                      "participants": [{k: r.get(k) for k in ("id", "name", "company", "department", "mode",
+                                                              "cohort", "path", "expected",
                                                               "percent", "stage", "stage_done", "items",
                                                               "activity", "flags", "next", "error")}
                                       for r in snap["participants"]]})
@@ -1045,6 +1244,7 @@ def render_html(hist: list[dict]) -> str:
 
 
 def write_reports(hist: list[dict], out: Path, telegram: bool) -> None:
+    normalize_history(hist)
     out.mkdir(parents=True, exist_ok=True)
     (out / "index.html").write_text(render_html(hist), encoding="utf-8")
     (out / "summary.md").write_text(summary_md(hist), encoding="utf-8")
@@ -1063,7 +1263,7 @@ def laggards(hist: list[dict]) -> str:
         if not kinds & {"stalled", "behind", "error"}:
             continue
         fl = ", ".join(f["label"] for f in r["flags"])
-        out.append(f"{r['name']} ({r['company'] or '—'}) — {r['percent']:.0f}%, этап «{stage_name(r['stage'])}», {fl}")
+        out.append(f"{r['name']} ({r['company'] or '—'}, {r['cohort']}) — {r['percent']:.0f}%, этап «{stage_name(r['stage'])}», {fl}")
         if r.get("error"):
             out.append(f"  причина: {r['error']}")
         a = r.get("activity") or {}
@@ -1102,6 +1302,7 @@ def main(argv=None) -> int:
     if not hist:
         print("Истории нет: сначала запустите check", file=sys.stderr)
         return 2
+    normalize_history(hist)
     if a.cmd == "laggards":
         print(laggards(hist))
         return 0
