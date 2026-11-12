@@ -19,4 +19,6 @@ COPY examples/airl-hub-demo/scripts scripts
 COPY examples/airl-hub-demo/ai ai
 COPY examples/airl-hub-demo/services/hub/create_users.js services/hub/create_users.js
 ENV SKILLS_DIR=/skills
+RUN mkdir -p /demo/ai/out && chown -R node:node /demo
+USER node
 CMD ["sh", "-c", "touch .env && bash scripts/setup_db.sh && bash ai/run_digest.sh"]

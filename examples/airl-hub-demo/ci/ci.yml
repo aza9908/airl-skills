@@ -1,0 +1,44 @@
+# CI демо-хаба (по шаблону skills/airl-devops/templates/ci-cd.yml, часть «проверки»).
+# ВНИМАНИЕ: GitHub запускает только .github/workflows/ в корне репозитория. Это демо лежит
+# в подпапке репозитория навыков, поэтому файл — образец: в отдельном репозитории хаба положите
+# его в .github/workflows/ci.yml. Выкладку на сервер (deploy.sh) добавляет /airl-devops, когда есть сервер.
+name: hub-ci
+on:
+  push: { branches: [main, demo-hub] }
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env: { POSTGRES_USER: airl_admin, POSTGRES_PASSWORD: ci_only_password, POSTGRES_DB: postgres }
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U airl_admin" --health-interval 5s --health-retries 20
+    env:
+      ADMIN_DATABASE_URL: postgresql://airl_admin:ci_only_password@127.0.0.1:5432/postgres
+      DEMO_PASSWORD: ${{ secrets.DEMO_PASSWORD || 'ci-demo-password-only' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: sudo apt-get install -y postgresql-client python3-psycopg
+      - name: Линтер и модульные тесты
+        working-directory: services
+        run: npm ci && npm run lint && npm test
+      - name: Хранилище с нуля (роли, слои, модули, синтетика)
+        run: bash scripts/setup_db.sh
+      - name: Модули на чистой базе
+        run: |
+          psql "$ADMIN_DATABASE_URL" -c "CREATE DATABASE modtest"
+          DATABASE_URL=postgresql://airl_admin:ci_only_password@127.0.0.1:5432/modtest bash skills/airl-modules/scripts/test_modules.sh pnl-cashflow receivables bank-reconciliation plan-fact
+      - name: Сервисы и проверки (check_service, сверка, атаки, Playwright)
+        run: |
+          npx playwright install --with-deps chromium
+          bash scripts/dev_up.sh
+          bash scripts/verify.sh
+      - name: Код-ревью — автоматические проверки
+        run: bash skills/airl-code-review/scripts/review_checks.sh --no-tools .
+      - name: Образы собираются
+        run: for s in hub finance sales edu; do docker build --build-arg SERVICE=$s -t hub-$s:${{ github.sha }} .; done
