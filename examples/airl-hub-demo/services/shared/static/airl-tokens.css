@@ -1,29 +1,37 @@
-/* Токены дизайна хаба AIRL — COMPANY_MAP.md, раздел 9. Один файл на все сервисы:
-   цвета, шрифт и радиусы в компонентах — только через эти переменные. */
+/* Токены дизайна хаба AIRL — COMPANY_MAP.md, раздел 9 (стиль «1С Hub» airl.kz). Один файл на все сервисы:
+   цвета, шрифты и радиусы в компонентах — только через эти переменные. */
 :root {
-  --airl-color-primary: #8f7bf0;      /* фирменный акцент (кнопки-акценты, графики, фокус) */
+  --airl-color-primary: #8f7bf0;      /* фирменный акцент (фокус, свечение, акценты) */
   --airl-color-primary-ink: #5b45c9;  /* акцент для текста и ссылок: контраст ≥ 4.5:1 на фоне */
+  --airl-color-chart: #7b61ff;        /* основной цвет графиков (выручка) */
+  --airl-color-chart-2: #16161a;      /* второй ряд графиков (расходы, прибыль) */
+  --airl-color-pink: #e08bd4;         /* конец градиента полос */
   --airl-color-bg: #e8e8f2;           /* фон страниц */
-  --airl-color-surface: #f7f7fb;      /* карточки */
-  --airl-color-surface-2: #dcdcea;    /* подложки, полосы таблиц */
-  --airl-color-text: #16161a;         /* основной текст, тёмная шапка */
+  --airl-color-surface: #ffffff;      /* карточки */
+  --airl-color-surface-2: #ececf4;    /* подложки, дорожки полос, строки таблиц */
+  --airl-color-text: #16161a;         /* основной текст, тёмная шапка, тёмная карточка */
   --airl-color-muted: #5c5c70;        /* второстепенный текст (контраст ≥ 4.5:1) */
-  --airl-color-muted-2: #79798e;      /* подписи осей, неважное (только крупно) */
-  --airl-color-line: #cfcfdf;
+  --airl-color-muted-2: #79798e;      /* моноширинные подписи, оси */
+  --airl-color-line: #e1e1ec;
+  --airl-color-input-line: #d9dbe8;
   --airl-color-on-dark: #f4f4fa;
+  --airl-color-on-dark-muted: #a9a9bd;
   --airl-color-success: #1d7f57;
   --airl-color-warning: #a35f00;
-  --airl-color-danger: #c2334d;
-  --airl-color-success-bg: #dff1e8;
-  --airl-color-warning-bg: #fbecd2;
-  --airl-color-danger-bg: #f8dde3;
-  --airl-color-margin-bg: #e6e1fb;    /* строка «валовая прибыль» в ОПиУ */
-  --airl-color-net-bg: #dff1e8;       /* строка «чистая прибыль» в ОПиУ */
+  --airl-color-danger: #c8335a;       /* отрицательные значения, риск */
+  --airl-color-success-bg: #e0f2e9;
+  --airl-color-warning-bg: #fbeed6;
+  --airl-color-danger-bg: #f9e0e7;
+  --airl-color-margin-bg: #efecfd;    /* строка «валовая прибыль» в ОПиУ */
+  --airl-color-net-bg: #e6f4ed;       /* строка «чистая прибыль» в ОПиУ */
   --airl-font: "Inter Tight", "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
   --airl-font-mono: "Victor Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
   --airl-radius: 26px;                /* поля ввода и кнопки (как на входе airl.kz) */
-  --airl-radius-card: 22px;
-  --airl-radius-sm: 12px;
-  --airl-shadow: 0 6px 22px rgba(22, 22, 26, .07);
-  --airl-gap: 16px;
+  --airl-radius-bar: 32px;            /* тёмная шапка */
+  --airl-radius-card: 24px;
+  --airl-radius-sm: 16px;
+  --airl-shadow: 0 1px 2px rgba(22, 22, 26, .04), 0 8px 24px rgba(22, 22, 26, .04);
+  --airl-gap: 20px;
+  --airl-max: 1440px;
+  --airl-pad: clamp(16px, 3vw, 38px);
 }
