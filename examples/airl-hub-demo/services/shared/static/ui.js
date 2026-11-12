@@ -247,10 +247,11 @@ const AIRL = (() => {
       <ul class="dlegend">${rows.map((r, i) => `<li><i class="c${i % 6}"></i><span>${esc(r.label)}</span><span class="amt">${esc(fmt(r.value))}<small>${pct(r.value)}</small></span></li>`).join('')}</ul></div>`;
   }
 
-  // Горизонтальные полосы с градиентом: rows = [{label, value, sub?, cls?}].
+  // Горизонтальные полосы с градиентом (фиолетовый → розовый): rows = [{label, value, sub?, cls?, text?}];
+  // text — подпись вместо fmt(value) (например, отрицательный ROMI при полосе нулевой длины).
   function hbars(rows, { fmt = fmtMoney, one = false } = {}) {
     const max = Math.max(1, ...rows.map((r) => Number(r.value) || 0));
-    return `<div class="hbars${one ? ' one' : ''}">${rows.map((r) => `<div class="hbar"><div class="top"><span class="name">${esc(r.label)}</span><span class="amt">${esc(fmt(r.value))}</span></div>
+    return `<div class="hbars${one ? ' one' : ''}">${rows.map((r) => `<div class="hbar"><div class="top"><span class="name">${esc(r.label)}</span><span class="amt">${esc(r.text ?? fmt(r.value))}</span></div>
       <span class="track"><span class="fill ${esc(r.cls || '')}" data-w="${(100 * (Number(r.value) || 0) / max).toFixed(1)}"></span></span>${r.sub ? `<div class="desc">${esc(r.sub)}</div>` : ''}</div>`).join('')}</div>`;
   }
 

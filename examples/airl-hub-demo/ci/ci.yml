@@ -41,4 +41,4 @@ jobs:
       - name: Код-ревью — автоматические проверки
         run: bash skills/airl-code-review/scripts/review_checks.sh --no-tools .
       - name: Образы собираются
-        run: for s in hub finance sales edu; do docker build --build-arg SERVICE=$s -t hub-$s:${{ github.sha }} .; done
+        run: for s in hub finance sales edu hr marketing; do docker build --build-arg SERVICE=$s -t hub-$s:${{ github.sha }} .; done

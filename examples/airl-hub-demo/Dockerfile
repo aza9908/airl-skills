@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# Один образ на сервис хаба: SERVICE = hub | finance | sales | edu.
+# Один образ на сервис хаба: SERVICE = hub | finance | sales | edu | hr | marketing.
 #   docker build --build-arg SERVICE=finance --build-arg APP_VERSION=1.0.0 -t airl-hub-demo-finance:1.0.0 .
 FROM node:22-alpine
 ARG SERVICE
@@ -16,6 +16,8 @@ COPY services/shared services/shared
 COPY services/finance/airl.service.json services/finance/airl.service.json
 COPY services/sales/airl.service.json services/sales/airl.service.json
 COPY services/edu/airl.service.json services/edu/airl.service.json
+COPY services/hr/airl.service.json services/hr/airl.service.json
+COPY services/marketing/airl.service.json services/marketing/airl.service.json
 COPY hub/services.json hub/services.json
 COPY services/${SERVICE} services/${SERVICE}
 RUN mkdir -p /app/.secrets /app/ai/out && chown -R node:node /app/.secrets /app/ai

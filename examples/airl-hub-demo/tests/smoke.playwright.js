@@ -1,5 +1,5 @@
 'use strict';
-// Сквозной тест Playwright: вход под ceo, head_finance, staff_sales; видимость по ролям;
+// Сквозной тест Playwright: вход под ceo, head_finance, head_hr, head_marketing, staff_sales; видимость по ролям;
 // цифры карточек экрана руководителя = SQL metrics.kpi_period; скриншоты (компьютер и телефон, DPR 2).
 // Запуск: DEMO_PASSWORD=... ADMIN_DB_URL=... node tests/smoke.playwright.js [http://127.0.0.1:8080]
 const { chromium } = require('playwright');
@@ -41,11 +41,12 @@ async function login(page, user) {
 // Запрос из страницы (с cookie сессии браузера), возвращает код ответа.
 const status = (page, url) => page.evaluate(async (u) => (await fetch(u, { credentials: 'same-origin' })).status, url);
 
-async function shot(page, name) {
+async function shot(page, name, full) {
   await page.waitForTimeout(400);
-  // телефон — первый экран (как видит человек), компьютер — страница целиком
-  await page.screenshot({ path: path.join(SHOTS, `${name}.png`), fullPage: !/mobile/.test(name) });
+  // телефон — первый экран (как видит человек), компьютер — страница целиком (или видимая часть: full = false)
+  await page.screenshot({ path: path.join(SHOTS, `${name}.png`), fullPage: full ?? !/mobile/.test(name) });
 }
+const noHScroll = (page) => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1);
 
 (async () => {
   if (!PW || !process.env.ADMIN_DB_URL) { console.error('Нужны DEMO_PASSWORD и ADMIN_DB_URL'); process.exit(2); }
@@ -74,22 +75,38 @@ async function shot(page, name) {
         const cards = await page.$$eval('.kpi[data-metric]', (els) => els.map((e) => [e.dataset.metric, e.querySelector('.v').dataset.value]));
         const want = new Map(sql(`SELECT metric_id, COALESCE(value::text, '') FROM metrics.kpi_period('${grain}')`).map(([k, v]) => [k, v]));
         const bad = cards.filter(([k, v]) => Number(v || NaN) !== Number(want.get(k) || NaN) && !(v === '' && want.get(k) === ''));
-        ok(cards.length === 12 && bad.length === 0, `ceo, период «${grain}»: ${cards.length} карточек, все равны SQL metrics.kpi_period (расхождений: ${bad.length})`);
+        const ids = new Set(cards.map(([k]) => k));
+        const missing = [...want.keys()].filter((k) => !ids.has(k));
+        ok(missing.length === 0 && bad.length === 0, `ceo, период «${grain}»: ${ids.size} показателей карты из ${want.size} на экране (нет: ${missing.join(', ') || '—'}), все равны SQL metrics.kpi_period (расхождений: ${bad.length})`);
       }
       await page.click('[data-grain="month"]');
       await page.waitForSelector('.kpi[data-metric]');
       const tiles = await page.$$eval('.tile', (t) => t.map((x) => x.dataset.service));
-      ok(tiles.length === 3, `ceo видит плитки всех отделов: ${tiles.join(', ')}`);
+      ok(tiles.length === 5, `ceo видит плитки всех 5 отделов: ${tiles.join(', ')}`);
+      const tabs = await page.$$eval('#nav a', (a) => a.map((x) => x.textContent));
+      ok(tabs.join(' · ') === 'Обзор · Доходы и расходы · Деньги · Клиенты и счета · Продажи · Маркетинг · Обучение · HR · Операции', `вкладки экрана руководителя: ${tabs.join(' · ')}`);
+      ok(await page.$('#hr #vacancies') && await page.$('#hr #payroll') && await page.$('#marketing #mkt-channels') && await page.$('#marketing #campaigns'),
+        'разделы «HR» (вакансии, ФОТ по отделам) и «Маркетинг» (расход по каналам, кампании) — на экране');
+      const attn = await page.textContent('#alerts');
+      ok(/HR:|Маркетинг:/.test(attn), 'в «На что обратить внимание» есть сигналы HR и маркетинга');
+      await page.$eval('#hr', (e) => e.scrollIntoView()); await shot(page, '07-ceo-hr-section-desktop', false);
+      await page.$eval('#marketing', (e) => e.scrollIntoView()); await shot(page, '07-ceo-marketing-section-desktop', false);
       const tileRev = await page.$eval('[data-service="finance"]', (t) => t.textContent);
       ok(/Выручка/.test(tileRev) && /Валовая маржа/.test(tileRev), 'подписи плитки — из карты (Выручка, Валовая маржа)');
       ok(await page.$('#pnl') && await page.$('#aging') && await page.$('#funnel') && await page.$('#forecast'), 'ОПиУ, старение дебиторки, воронка, прогноз — на экране');
     }
     await shot(page, `02-ceo-overview-${mobile ? 'mobile' : 'desktop'}`);
     for (const [p, name, sel] of [['/finance/', 'finance-overview', '.kpi'], ['/finance/#/pnl', 'finance-pnl', '.tbl'], ['/finance/#/debtors', 'finance-debtors', '.tbl'],
-      ['/finance/#/bank', 'finance-bank', '.kpi'], ['/sales/', 'sales-overview', '.kpi'], ['/sales/#/plan', 'sales-plan', '.tbl'], ['/edu/', 'edu-overview', '.kpi']]) {
+      ['/finance/#/bank', 'finance-bank', '.kpi'], ['/sales/', 'sales-overview', '.kpi'], ['/sales/#/plan', 'sales-plan', '.tbl'], ['/edu/', 'edu-overview', '.kpi'],
+      ['/hr/', 'hr-overview', '.kpi'], ['/hr/#/vacancies', 'hr-vacancies', '.tbl'], ['/hr/#/onboarding', 'hr-onboarding', '.tbl'], ['/hr/#/payroll', 'hr-payroll', '.hbars'],
+      ['/marketing/', 'marketing-overview', '.kpi'], ['/marketing/#/campaigns', 'marketing-campaigns', '.tbl'], ['/marketing/#/budget', 'marketing-budget', '.tbl']]) {
       await page.goto(BASE + p); await page.waitForSelector(sel);
-      if (!mobile || ['finance-overview', 'finance-pnl', 'sales-overview', 'edu-overview'].includes(name)) await shot(page, `03-ceo-${name}-${mobile ? 'mobile' : 'desktop'}`);
+      if (mobile) ok(await noHScroll(page), `ceo, телефон 390px: ${p} без горизонтальной прокрутки`);
+      if (!mobile || ['finance-overview', 'finance-pnl', 'sales-overview', 'edu-overview', 'hr-overview', 'marketing-overview'].includes(name)) await shot(page, `03-ceo-${name}-${mobile ? 'mobile' : 'desktop'}`);
     }
+    if (mobile) { await page.goto(`${BASE}/`); await page.waitForSelector('#tiles'); ok(await noHScroll(page), 'ceo, телефон 390px: экран руководителя без горизонтальной прокрутки'); }
+    const names = await page.goto(`${BASE}/hr/#/onboarding`).then(() => page.waitForSelector('.tbl')).then(() => page.$$eval('.tbl tbody td:first-child a', (a) => a.map((x) => x.textContent)));
+    ok(names.length > 0 && names.every((n) => /\*\*\*/.test(n)), `ceo: имена новых сотрудников в HR замаскированы (${names[0] || '—'})`);
     const fin = await page.goto(`${BASE}/finance/#/debtors`).then(() => page.waitForSelector('.tbl')).then(() => page.$$eval('.tbl tbody td:first-child a', (a) => a.map((x) => x.textContent)));
     ok(fin.some((n) => /\*\*\*/.test(n)) || fin.every((n) => /ТОО/.test(n)), 'ceo: имена физлиц-должников замаскированы');
     ok(page.errors.length === 0, `ceo: ошибок в консоли нет (${page.errors.slice(0, 2).join(' | ')})`);
@@ -111,6 +128,45 @@ async function shot(page, name) {
     await shot(page, '04-head_finance-overview-desktop');
     const st = await status(page, '/sales/api/overview');
     ok(st === 403, `head_finance → /sales/api/overview: ${st}`);
+    await ctx.close();
+  }
+
+  // ---------- head_hr и head_marketing: свой отдел, KPI = SQL ----------
+  for (const [user, dept, other, sec] of [['head_hr', 'hr', 'marketing', '#hr'], ['head_marketing', 'marketing', 'hr', '#marketing']]) {
+    const { ctx, page } = await newPage(browser, false);
+    await login(page, user);
+    ok(new URL(page.url()).pathname === '/', `${user} после входа на экране руководителя (свой отдел)`);
+    await page.waitForSelector('.kpi[data-metric]'); await page.waitForSelector('#tiles');
+    const cards = await page.$$eval('.kpi[data-metric]', (els) => els.map((e) => [e.dataset.metric, e.querySelector('.v').dataset.value]));
+    const want = new Map(sql(`SELECT metric_id, COALESCE(value::text, '') FROM metrics.kpi_period('month') WHERE department = '${dept}'`).map(([k, v]) => [k, v]));
+    const bad = cards.filter(([k, v]) => !want.has(k) || (Number(v || NaN) !== Number(want.get(k) || NaN) && !(v === '' && want.get(k) === '')));
+    ok(cards.length === want.size && bad.length === 0, `${user}: ${cards.length} карточек — только показатели своего отдела, равны SQL (${cards.map((c) => c[0]).join(', ')})`);
+    const tiles = await page.$$eval('.tile', (t) => t.map((x) => x.dataset.service));
+    ok(tiles.length === 1 && tiles[0] === dept, `${user}: плитка только своего отдела (${tiles.join(', ')})`);
+    ok(await page.$(sec) && !(await page.$('#funnel')) && !(await page.$('#pnl')) && !(await page.$(`#${other}`)), `${user}: раздел своего отдела есть, чужих (ОПиУ, воронка, ${other}) нет`);
+    const opts = await page.$$eval('#svc-switch option', (o) => o.map((x) => x.textContent));
+    ok(opts.length === 2 && !opts.includes('Финансы'), `${user}: в переключателе ${opts.join(', ')}`);
+    await shot(page, `08-${user}-overview-desktop`);
+    await page.goto(`${BASE}/${dept}/`); await page.waitForSelector('.kpi');
+    await shot(page, `08-${user}-service-desktop`);
+    if (dept === 'hr') {
+      await page.goto(`${BASE}/hr/#/onboarding`); await page.waitForSelector('.tbl');
+      const n = await page.$$eval('.tbl tbody td:first-child a', (a) => a.map((x) => x.textContent));
+      ok(n.length > 0 && n.every((x) => !/\*\*\*/.test(x)), `head_hr видит имена новых сотрудников без маски («${n[0]}»)`);
+    }
+    ok(page.errors.length === 0, `${user}: ошибок в консоли нет (${page.errors.slice(0, 2).join(' | ')})`);
+    const st = await status(page, `/${other}/api/overview`); // 403 в консоли браузера — ожидаемо, поэтому после проверки ошибок
+    ok(st === 403, `${user} → /${other}/api/overview: ${st}`);
+    await ctx.close();
+  }
+  for (const user of ['staff_hr', 'staff_marketing']) {
+    const { ctx, page } = await newPage(browser, true);
+    await login(page, user);
+    const dept = user.split('_')[1];
+    ok(new URL(page.url()).pathname === `/${dept}/`, `${user} после входа сразу в своём сервисе`);
+    await page.waitForSelector('.tbl, .kpi');
+    ok(await noHScroll(page), `${user}, телефон 390px: без горизонтальной прокрутки`);
+    await shot(page, `09-${user}-mobile`);
     await ctx.close();
   }
 

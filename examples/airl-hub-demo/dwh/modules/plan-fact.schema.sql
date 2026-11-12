@@ -43,7 +43,7 @@ DROP TRIGGER IF EXISTS pf_plans_touch ON pf_plans;
 CREATE TRIGGER pf_plans_touch BEFORE UPDATE ON pf_plans FOR EACH ROW EXECUTE FUNCTION airl_touch();
 
 -- Цифру плана не правят на месте: только новая версия. Статус — только из active.
-CREATE OR REPLACE FUNCTION pf_plans_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE OR REPLACE FUNCTION pf_plans_guard() RETURNS trigger LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
 BEGIN
     IF NEW.plan_value <> OLD.plan_value OR NEW.metric_id <> OLD.metric_id OR NEW.period <> OLD.period
        OR NEW.dimension_type <> OLD.dimension_type OR NEW.dimension_value <> OLD.dimension_value THEN
@@ -65,7 +65,7 @@ CREATE TRIGGER pf_plans_guard BEFORE UPDATE ON pf_plans FOR EACH ROW EXECUTE FUN
 -- Поставить или изменить план: прежний активный уходит в superseded, история остаётся.
 CREATE OR REPLACE FUNCTION pf_set_plan(p_metric_id text, p_period date, p_dimension_type text,
                                        p_dimension_value text, p_value numeric, p_actor text, p_comment text)
-RETURNS bigint LANGUAGE plpgsql AS $$
+RETURNS bigint LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
 DECLARE v_id bigint;
 BEGIN
     UPDATE pf_plans SET status = 'superseded', updated_by = p_actor, comment = COALESCE(p_comment, comment)
@@ -225,7 +225,7 @@ FROM v_pf_plan_fact
 WHERE dimension_type = 'company' AND month_state IN ('past', 'current');
 
 -- Очередь уведомлений по v_pf_signals: одно на строку плана, месяц и получателя.
-CREATE OR REPLACE FUNCTION pf_queue_signals() RETURNS int LANGUAGE plpgsql AS $$
+CREATE OR REPLACE FUNCTION pf_queue_signals() RETURNS int LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
 DECLARE
     v_channel text := airl_setting('plan-fact', 'channel', '"telegram"') #>> '{}';
     v_n int;

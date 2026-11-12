@@ -7,7 +7,7 @@
 | Где | Как | Проверено |
 |---|---|---|
 | песочница без Docker | `scripts/setup_db.sh` + `scripts/dev_up.sh` (Node + локальный прокси `scripts/dev-proxy.js` вместо Caddy) | да: verify.sh зелёный |
-| песочница, Docker | образы `hub/finance/sales/edu` из `Dockerfile`, `db` — `postgres:16-alpine`, `docker compose up` | да: 4 контейнера healthy, `check_service.py` exit 0 ×3 (`verification/check_service_compose.txt`) |
+| песочница, Docker | образы `hub/finance/sales/edu` из `Dockerfile`, `db` — `postgres:16-alpine`, `docker compose up` | да: 4 контейнера healthy, `check_service.py` exit 0 ×3 (`verification/check_service_compose.txt`); hr и marketing добавлены в compose позже и в песочнице не поднимались (образы те же, `SERVICE=hr|marketing`) |
 | песочница, Docker: Caddy и контейнер `setup` | — | **нет**: Docker Hub вернул 429 на `caddy:2.8-alpine`; зеркало Alpine закрыто прокси песочницы (403) — хранилище в стеке ставилось с хоста |
 | боевой сервер в РК | — | **нет** |
 
@@ -79,7 +79,7 @@ curl -fsSL https://raw.githubusercontent.com/aza9908/airl-skills/main/examples/a
 | Порт | Что | Снаружи |
 |---|---|---|
 | 80/443 | Caddy | да |
-| 3000–3003 | hub, finance, sales, edu | только `127.0.0.1` |
+| 3000–3005 | hub, finance, sales, edu, hr, marketing | только `127.0.0.1` |
 | 5432 | PostgreSQL | нет (только сеть `dwh`) |
 
 Безопасно: `docker compose ps`, `docker compose logs --tail 50 finance`, `curl …/healthz`.

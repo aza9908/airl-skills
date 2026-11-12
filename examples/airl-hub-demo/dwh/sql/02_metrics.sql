@@ -39,7 +39,16 @@ INSERT INTO metrics.definitions VALUES
  ('enrollments',             'Записи на курс',                'чел', 'flow',  'edu',     true,  'delta_pct', -10, -25, 'Руководитель обучения'),
  ('cohort_fill_rate',        'Заполненность потоков',         '%',   'point', 'edu',     true,  'abs',       85,  70,  'Руководитель обучения'),
  ('course_completion_rate',  'Доля завершивших курс',         '%',   'point', 'edu',     true,  'abs',       80,  65,  'Руководитель обучения'),
- ('headcount',               'Численность',                   'чел', 'point', 'ceo',     true,  'abs',       NULL, NULL, 'Генеральный директор')
+ ('headcount',               'Численность',                   'чел', 'point', 'hr',      true,  'abs',       NULL, NULL, 'Руководитель HR'),
+ ('turnover_rate',           'Текучесть за 12 месяцев',       '%',   'point', 'hr',      false, 'abs',       12,  20,  'Руководитель HR'),
+ ('time_to_hire',            'Срок закрытия вакансии',        'дн',  'point', 'hr',      false, 'abs',       35,  50,  'Руководитель HR'),
+ ('open_vacancies',          'Открытые вакансии',             'шт',  'point', 'hr',      false, 'abs',       3,   6,   'Руководитель HR'),
+ ('payroll_fund',            'Фонд оплаты труда',             'KZT', 'flow',  'hr',      false, 'delta_pct', -10, -25, 'Руководитель HR'),
+ ('ad_spend',                'Расход на рекламу',             'KZT', 'flow',  'marketing', false, 'delta_pct', -20, -40, 'Руководитель маркетинга'),
+ ('cpl',                     'Цена заявки (CPL)',             'KZT', 'ratio', 'marketing', false, 'delta_pct', -10, -25, 'Руководитель маркетинга'),
+ ('cac',                     'Цена слушателя (CAC)',          'KZT', 'ratio', 'marketing', false, 'delta_pct', -10, -25, 'Руководитель маркетинга'),
+ ('romi',                    'Окупаемость рекламы (ROMI)',    '%',   'ratio', 'marketing', true,  'abs',       200, 100, 'Руководитель маркетинга'),
+ ('marketing_conversion',    'Конверсия заявок на курс',      '%',   'ratio', 'marketing', true,  'abs',       8,   5,   'Руководитель маркетинга')
 ON CONFLICT (metric_id) DO UPDATE SET title = EXCLUDED.title, unit = EXCLUDED.unit, kind = EXCLUDED.kind,
     department = EXCLUDED.department, higher_is_better = EXCLUDED.higher_is_better,
     status_mode = EXCLUDED.status_mode, warn = EXCLUDED.warn, bad = EXCLUDED.bad, owner = EXCLUDED.owner;
@@ -51,7 +60,9 @@ INSERT INTO metrics.definitions (metric_id, title, unit, kind, department, highe
  ('receivables_overdue_share', 'Доля просрочки в дебиторке',     '%',   'point', 'finance', false, 'abs', NULL, NULL, 'Финансовый директор',   'mart_finance'),
  ('bank_unmatched_count',      'Неразнесённые строки выписки',   'шт',  'point', 'finance', false, 'abs', NULL, NULL, 'Главный бухгалтер',     'mart_finance'),
  ('bank_auto_match_rate',      'Доля строк, разнесённых по подсказке', '%', 'ratio', 'finance', true, 'abs', NULL, NULL, 'Главный бухгалтер', 'mart_finance'),
- ('edu_at_risk',               'Слушатели под риском отсева',    'чел', 'point', 'edu',     false, 'abs', NULL, NULL, 'Руководитель обучения', 'mart_edu')
+ ('edu_at_risk',               'Слушатели под риском отсева',    'чел', 'point', 'edu',     false, 'abs', NULL, NULL, 'Руководитель обучения', 'mart_edu'),
+ ('onboarding_on_time_rate',   'Онбординг в срок',               '%',   'ratio', 'hr',      true,  'abs', NULL, NULL, 'Руководитель HR',       'mart_hr'),
+ ('mkt_budget_usage',          'Исполнение рекламного бюджета',  '%',   'ratio', 'marketing', false, 'abs', NULL, NULL, 'Руководитель маркетинга', 'mart_marketing')
 ON CONFLICT (metric_id) DO UPDATE SET title = EXCLUDED.title, unit = EXCLUDED.unit, department = EXCLUDED.department, source = EXCLUDED.source;
 
 -- «Сегодня» показателей: последний загруженный день (данные за вчера).
@@ -67,10 +78,32 @@ RETURNS numeric LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalo
       AND (CASE WHEN p_entity IS NULL THEN NOT is_intragroup ELSE entity_id = p_entity END)
 $$;
 
+-- Расходы по начислению — одна лента для показателей, ОПиУ хаба и модуля pnl-cashflow (адаптер src_pnl_entries).
+-- Оплата труда — из 1С:ЗУП, равномерно по дням месяца (раздел 4 карты, payroll_fund): в 1С:Бухгалтерии
+-- зарплата проводится одной суммой в последний день, и без этого неполный месяц шёл бы без ФОТ,
+-- а прибыль «с 1-го по вчера» была завышена. Сумма за закрытый месяц та же, что в 1С (проверка — tests/reconcile.sql).
+-- Текущий месяц — плановое начисление ЗУП, предварительно. Остаток копеек — в последний день месяца.
+CREATE OR REPLACE VIEW metrics.payroll_daily AS
+WITH m AS (
+    SELECT entity_id, month, sum(accrued + employer_taxes) AS total,
+           extract(day FROM (month + interval '1 month - 1 day'))::int AS dim
+    FROM core.payroll_monthly GROUP BY entity_id, month
+)
+SELECT m.entity_id, (m.month + k - 1) AS day,
+       round(m.total * k / m.dim, 2) - round(m.total * (k - 1) / m.dim, 2) AS amount
+FROM m CROSS JOIN LATERAL generate_series(1, m.dim) k;
+
+CREATE OR REPLACE VIEW metrics.expense_entries AS
+SELECT e.expense_id, e.entity_id, e.doc_date, e.account_code, e.article, e.amount_net, e.is_intragroup, e.supplier_id
+FROM core.expenses e WHERE e.article <> 'ФОТ'
+UNION ALL
+SELECT 'payroll:' || p.entity_id || ':' || p.day, p.entity_id, p.day, '7210.01', 'Оплата труда', p.amount, false, NULL
+FROM metrics.payroll_daily p;
+
 -- Расходы по статьям (без НДС), без внутригрупповых для компании.
 CREATE OR REPLACE FUNCTION metrics.expense(p_from date, p_to date, p_articles text[], p_entity text DEFAULT NULL)
 RETURNS numeric LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
-    SELECT COALESCE(sum(amount_net), 0) FROM core.expenses
+    SELECT COALESCE(sum(amount_net), 0) FROM metrics.expense_entries
     WHERE doc_date BETWEEN p_from AND p_to
       AND (p_articles IS NULL OR article = ANY (p_articles))
       AND (CASE WHEN p_entity IS NULL THEN NOT is_intragroup ELSE entity_id = p_entity END)
@@ -160,6 +193,42 @@ BEGIN
         RETURN CASE WHEN v_d = 0 THEN NULL ELSE round(100 * v_n / v_d, 1) END;
     WHEN 'headcount' THEN
         RETURN (SELECT count(*) FROM core.employees WHERE hire_date <= p_to AND (fire_date IS NULL OR fire_date > p_to));
+    WHEN 'turnover_rate' THEN
+        -- скользящие 12 месяцев до конца периода: уволенные / средняя численность (начало и конец окна) × 100
+        SELECT count(*) INTO v_n FROM core.employees WHERE fire_date > p_to - 365 AND fire_date <= p_to;
+        v_d := (metrics.value('headcount', p_to - 365, p_to - 365) + metrics.value('headcount', p_to, p_to)) / 2;
+        RETURN CASE WHEN v_d = 0 THEN NULL ELSE round(100 * v_n / v_d, 1) END;
+    WHEN 'time_to_hire' THEN
+        -- вакансии, закрытые наймом за 180 дней до конца периода: средние дни от открытия до найма
+        RETURN (SELECT round(avg(closed - opened), 0) FROM core.vacancies
+                WHERE status = 'closed' AND closed > p_to - 180 AND closed <= p_to);
+    WHEN 'open_vacancies' THEN
+        RETURN (SELECT count(*) FROM core.vacancies WHERE opened <= p_to AND (closed IS NULL OR closed > p_to));
+    WHEN 'payroll_fund' THEN
+        RETURN metrics.expense(p_from, p_to, ARRAY['Оплата труда'], p_entity);
+    WHEN 'ad_spend' THEN
+        RETURN (SELECT COALESCE(sum(amount), 0) FROM core.ad_spend WHERE day BETWEEN p_from AND p_to);
+    WHEN 'cpl' THEN
+        v_d := metrics.value('lead', p_from, p_to);
+        RETURN CASE WHEN v_d = 0 THEN NULL ELSE round(metrics.value('ad_spend', p_from, p_to) / v_d, 0) END;
+    WHEN 'cac' THEN
+        -- новые слушатели курса: заявки воронки «Курс VibeOps», оплаченные в периоде (B2B ведут менеджеры)
+        SELECT count(*) INTO v_d FROM core.leads WHERE stage = 'won' AND closed_date BETWEEN p_from AND p_to
+          AND NOT is_duplicate AND pipeline = 'Курс VibeOps';
+        RETURN CASE WHEN v_d = 0 THEN NULL ELSE round(metrics.value('ad_spend', p_from, p_to) / v_d, 0) END;
+    WHEN 'romi' THEN
+        -- (выручка оплаченных в периоде заявок на курс без НДС − расход на рекламу) / расход × 100; по выручке
+        v_d := metrics.value('ad_spend', p_from, p_to);
+        SELECT COALESCE(sum(amount), 0) / 1.12 INTO v_n FROM core.leads
+        WHERE stage = 'won' AND closed_date BETWEEN p_from AND p_to AND NOT is_duplicate AND pipeline = 'Курс VibeOps';
+        RETURN CASE WHEN v_d = 0 THEN NULL ELSE round(100 * (v_n - v_d) / v_d, 0) END;
+    WHEN 'marketing_conversion' THEN
+        -- как conversion_lead_to_deal, но только воронка «Курс VibeOps» (её ведёт реклама)
+        SELECT count(*) INTO v_n FROM core.leads
+        WHERE stage = 'won' AND closed_date BETWEEN p_from AND p_to AND NOT is_duplicate AND pipeline = 'Курс VibeOps';
+        SELECT count(*) INTO v_d FROM core.leads
+        WHERE created_date BETWEEN p_from AND p_to AND NOT is_duplicate AND pipeline = 'Курс VibeOps';
+        RETURN CASE WHEN v_d = 0 THEN NULL ELSE round(100 * v_n / v_d, 1) END;
     ELSE
         RAISE EXCEPTION 'Нет показателя % в карте', p_metric;
     END CASE;
@@ -176,8 +245,9 @@ RETURNS text LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, 
         WHEN d.status_mode = 'abs' THEN
              CASE WHEN p_value >= d.bad THEN 'danger' WHEN p_value >= d.warn THEN 'warning' ELSE 'ok' END
         WHEN p_prev IS NULL OR p_prev = 0 THEN 'ok'
-        ELSE CASE WHEN 100 * (p_value - p_prev) / abs(p_prev) < d.bad THEN 'danger'
-                  WHEN 100 * (p_value - p_prev) / abs(p_prev) < d.warn THEN 'warning' ELSE 'ok' END
+        -- delta_pct: для «меньше — лучше» (расходы, цена заявки) плох рост, а не падение
+        ELSE CASE WHEN (CASE WHEN d.higher_is_better THEN 1 ELSE -1 END) * 100 * (p_value - p_prev) / abs(p_prev) < d.bad THEN 'danger'
+                  WHEN (CASE WHEN d.higher_is_better THEN 1 ELSE -1 END) * 100 * (p_value - p_prev) / abs(p_prev) < d.warn THEN 'warning' ELSE 'ok' END
     END
     FROM metrics.definitions d WHERE d.metric_id = p_metric
 $$;
@@ -290,6 +360,15 @@ CREATE OR REPLACE VIEW metrics.m_enrollments AS SELECT * FROM metrics.monthly('e
 CREATE OR REPLACE VIEW metrics.m_cohort_fill_rate AS SELECT * FROM metrics.monthly('cohort_fill_rate');
 CREATE OR REPLACE VIEW metrics.m_course_completion_rate AS SELECT * FROM metrics.monthly('course_completion_rate');
 CREATE OR REPLACE VIEW metrics.m_headcount AS SELECT * FROM metrics.monthly('headcount');
+CREATE OR REPLACE VIEW metrics.m_turnover_rate AS SELECT * FROM metrics.monthly('turnover_rate');
+CREATE OR REPLACE VIEW metrics.m_time_to_hire AS SELECT * FROM metrics.monthly('time_to_hire');
+CREATE OR REPLACE VIEW metrics.m_open_vacancies AS SELECT * FROM metrics.monthly('open_vacancies');
+CREATE OR REPLACE VIEW metrics.m_payroll_fund AS SELECT * FROM metrics.monthly('payroll_fund');
+CREATE OR REPLACE VIEW metrics.m_ad_spend AS SELECT * FROM metrics.monthly('ad_spend');
+CREATE OR REPLACE VIEW metrics.m_cpl AS SELECT * FROM metrics.monthly('cpl');
+CREATE OR REPLACE VIEW metrics.m_cac AS SELECT * FROM metrics.monthly('cac');
+CREATE OR REPLACE VIEW metrics.m_romi AS SELECT * FROM metrics.monthly('romi');
+CREATE OR REPLACE VIEW metrics.m_marketing_conversion AS SELECT * FROM metrics.monthly('marketing_conversion');
 
 -- Дневная выручка по направлениям — вход модуля plan-fact (src_pf_facts) и графиков.
 CREATE OR REPLACE VIEW metrics.revenue_daily AS
@@ -319,7 +398,7 @@ RETURNS TABLE (ord int, line_code text, title text, kind text, amount numeric)
 LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
     WITH r AS (SELECT metrics.revenue(p_from, p_to) AS rev),
     e AS (
-        SELECT article, sum(amount_net) AS amt FROM core.expenses
+        SELECT article, sum(amount_net) AS amt FROM metrics.expense_entries
         WHERE doc_date BETWEEN p_from AND p_to AND NOT is_intragroup GROUP BY article
     ),
     g AS (SELECT COALESCE(sum(amt) FILTER (WHERE article = ANY (metrics.direct_articles())), 0) AS direct,
@@ -383,3 +462,132 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
                            (date_trunc('month', a.at) - interval '11 months')::date - 1)
     FROM a
 $$;
+
+-- ===================== HR и маркетинг: расшифровки для экранов =====================
+
+-- Периоды графика: последние p_n периодов зерна p_grain (неполный текущий — «по вчера»). Та же сетка, что series().
+CREATE OR REPLACE FUNCTION metrics.periods(p_grain text, p_n int, p_at date DEFAULT NULL)
+RETURNS TABLE (period_start date, period_end date, label text)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
+    SELECT period_start, period_end, label FROM metrics.series('headcount', p_grain, p_n, p_at)
+$$;
+
+-- Найм и увольнения по периодам (без людей: только количество).
+CREATE OR REPLACE FUNCTION metrics.hr_moves(p_grain text, p_n int, p_at date DEFAULT NULL)
+RETURNS TABLE (period_start date, period_end date, label text, hires bigint, terminations bigint)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
+    SELECT p.period_start, p.period_end, p.label,
+           (SELECT count(*) FROM core.employees e WHERE e.hire_date BETWEEN p.period_start AND p.period_end),
+           (SELECT count(*) FROM core.employees e WHERE e.fire_date BETWEEN p.period_start AND p.period_end)
+    FROM metrics.periods(p_grain, p_n, p_at) p ORDER BY p.period_start
+$$;
+
+-- Вакансии: открытые на дату и закрытые за 180 дней. Только должность и отдел — без кандидатов.
+CREATE OR REPLACE FUNCTION metrics.vacancies(p_at date DEFAULT NULL)
+RETURNS TABLE (vacancy_id text, job_title text, department text, opened date, closed date, status text,
+               source text, candidates int, days_open int)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
+    WITH a AS (SELECT COALESCE(p_at, metrics.as_of()) AS at)
+    SELECT v.vacancy_id, v.position, v.department, v.opened,
+           CASE WHEN v.closed <= a.at THEN v.closed END,
+           CASE WHEN v.closed IS NULL OR v.closed > a.at THEN 'open' ELSE v.status END,
+           v.source, v.candidates,
+           (COALESCE(CASE WHEN v.closed <= a.at THEN v.closed END, a.at) - v.opened)::int
+    FROM core.vacancies v, a
+    WHERE v.opened <= a.at AND (v.closed IS NULL OR v.closed > a.at - 180)
+    ORDER BY (v.closed IS NULL OR v.closed > a.at) DESC, v.opened
+$$;
+
+-- Отдел для разреза ФОТ и отсутствий: отделы, где за период было меньше 3 человек, объединяются,
+-- чтобы по сумме нельзя было вычислить оклад одного человека (карта, раздел 7).
+CREATE OR REPLACE FUNCTION metrics.payroll_by_department(p_from date, p_to date)
+RETURNS TABLE (department text, people int, amount numeric)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
+    WITH d AS (
+        SELECT department, max(headcount) AS people,
+               sum((accrued + employer_taxes)
+                   * (least(p_to, (month + interval '1 month - 1 day')::date) - greatest(p_from, month) + 1)
+                   / extract(day FROM (month + interval '1 month - 1 day'))) AS amount
+        FROM (SELECT department, month, sum(headcount)::int AS headcount, sum(accrued) AS accrued, sum(employer_taxes) AS employer_taxes
+              FROM core.payroll_monthly GROUP BY department, month) x
+        WHERE month <= p_to AND (month + interval '1 month - 1 day')::date >= p_from
+        GROUP BY department
+    )
+    SELECT CASE WHEN people < 3 THEN 'Малые отделы (до 3 человек)' ELSE department END,
+           sum(people)::int, round(sum(amount), 0)
+    FROM d GROUP BY 1 ORDER BY 3 DESC
+$$;
+
+-- Дни отпусков и больничных по отделам за месяцы периода (с тем же объединением малых отделов).
+CREATE OR REPLACE FUNCTION metrics.absence_by_department(p_from date, p_to date)
+RETURNS TABLE (department text, vacation_days bigint, sick_days bigint)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
+    WITH small AS (
+        SELECT department FROM core.payroll_monthly
+        WHERE month BETWEEN date_trunc('month', p_from)::date AND p_to
+        GROUP BY department HAVING max(headcount) < 3
+    )
+    SELECT CASE WHEN a.department IN (SELECT department FROM small) THEN 'Малые отделы (до 3 человек)' ELSE a.department END,
+           COALESCE(sum(a.days) FILTER (WHERE a.kind = 'vacation'), 0), COALESCE(sum(a.days) FILTER (WHERE a.kind = 'sick'), 0)
+    FROM core.absences_monthly a
+    WHERE a.month BETWEEN date_trunc('month', p_from)::date AND p_to
+    GROUP BY 1 ORDER BY 1
+$$;
+
+-- Подпись канала для экранов (одна на всех).
+CREATE OR REPLACE FUNCTION metrics.channel_title(p_channel text) RETURNS text
+LANGUAGE sql IMMUTABLE AS $$
+    SELECT CASE p_channel WHEN 'instagram' THEN 'Instagram' WHEN 'site' THEN 'Сайт и Google'
+        WHEN 'telegram' THEN 'Telegram' WHEN 'meta_form' THEN 'Meta-формы' WHEN 'event' THEN 'Мероприятия'
+        WHEN 'referral' THEN 'Рекомендации' ELSE p_channel END
+$$;
+
+-- Каналы за период: расход, заявки (все), оплаты и выручка заявок на курс, CPL, CAC, ROMI, конверсия — формулы как в value().
+CREATE OR REPLACE FUNCTION metrics.marketing_channels(p_from date, p_to date)
+RETURNS TABLE (channel text, channel_title text, spend numeric, leads bigint, won bigint, revenue numeric,
+               cpl numeric, cac numeric, romi numeric, conversion numeric)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
+    WITH ch AS (SELECT DISTINCT channel FROM core.leads UNION SELECT DISTINCT channel FROM core.ad_spend),
+    s AS (SELECT channel, sum(amount) AS spend FROM core.ad_spend WHERE day BETWEEN p_from AND p_to GROUP BY channel),
+    l AS (SELECT channel, count(*) AS leads FROM core.leads WHERE created_date BETWEEN p_from AND p_to AND NOT is_duplicate GROUP BY channel),
+    lc AS (SELECT channel, count(*) AS leads FROM core.leads
+           WHERE created_date BETWEEN p_from AND p_to AND NOT is_duplicate AND pipeline = 'Курс VibeOps' GROUP BY channel),
+    w AS (SELECT channel, count(*) AS won, round(sum(amount) / 1.12, 0) AS revenue FROM core.leads
+          WHERE stage = 'won' AND closed_date BETWEEN p_from AND p_to AND NOT is_duplicate AND pipeline = 'Курс VibeOps'
+          GROUP BY channel)
+    SELECT ch.channel, metrics.channel_title(ch.channel), COALESCE(s.spend, 0), COALESCE(l.leads, 0), COALESCE(w.won, 0),
+           COALESCE(w.revenue, 0),
+           CASE WHEN COALESCE(l.leads, 0) > 0 AND s.spend IS NOT NULL THEN round(s.spend / l.leads, 0) END,
+           CASE WHEN COALESCE(w.won, 0) > 0 AND s.spend IS NOT NULL THEN round(s.spend / w.won, 0) END,
+           CASE WHEN COALESCE(s.spend, 0) > 0 THEN round(100 * (COALESCE(w.revenue, 0) - s.spend) / s.spend, 0) END,
+           CASE WHEN COALESCE(lc.leads, 0) > 0 THEN round(100.0 * COALESCE(w.won, 0) / lc.leads, 1) END
+    FROM ch LEFT JOIN s USING (channel) LEFT JOIN l USING (channel) LEFT JOIN lc USING (channel) LEFT JOIN w USING (channel)
+    WHERE s.spend IS NOT NULL OR l.leads IS NOT NULL OR w.won IS NOT NULL
+    ORDER BY COALESCE(s.spend, 0) DESC
+$$;
+
+-- Кампании за период (по utm_campaign). no_leads — расход есть, заявок нет: проверить UTM-метки.
+CREATE OR REPLACE FUNCTION metrics.marketing_campaigns(p_from date, p_to date)
+RETURNS TABLE (campaign_id text, title text, channel text, channel_title text, cabinet text, spend numeric,
+               leads bigint, won bigint, revenue numeric, cpl numeric, cac numeric, romi numeric, no_leads boolean)
+LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
+    WITH s AS (SELECT campaign_id, sum(amount) AS spend FROM core.ad_spend WHERE day BETWEEN p_from AND p_to GROUP BY campaign_id),
+    l AS (SELECT campaign AS campaign_id, count(*) AS leads FROM core.leads
+          WHERE created_date BETWEEN p_from AND p_to AND NOT is_duplicate GROUP BY campaign),
+    w AS (SELECT campaign AS campaign_id, count(*) AS won, round(sum(amount) / 1.12, 0) AS revenue FROM core.leads
+          WHERE stage = 'won' AND closed_date BETWEEN p_from AND p_to AND NOT is_duplicate AND pipeline = 'Курс VibeOps'
+          GROUP BY campaign)
+    SELECT c.campaign_id, c.title, c.channel, metrics.channel_title(c.channel), c.cabinet,
+           COALESCE(s.spend, 0), COALESCE(l.leads, 0), COALESCE(w.won, 0), COALESCE(w.revenue, 0),
+           CASE WHEN COALESCE(l.leads, 0) > 0 THEN round(COALESCE(s.spend, 0) / l.leads, 0) END,
+           CASE WHEN COALESCE(w.won, 0) > 0 THEN round(COALESCE(s.spend, 0) / w.won, 0) END,
+           CASE WHEN COALESCE(s.spend, 0) > 0 THEN round(100 * (COALESCE(w.revenue, 0) - s.spend) / s.spend, 0) END,
+           COALESCE(s.spend, 0) > 0 AND COALESCE(l.leads, 0) = 0
+    FROM core.ad_campaigns c LEFT JOIN s USING (campaign_id) LEFT JOIN l USING (campaign_id) LEFT JOIN w USING (campaign_id)
+    WHERE s.spend IS NOT NULL OR l.leads IS NOT NULL OR w.won IS NOT NULL
+    ORDER BY COALESCE(s.spend, 0) DESC, c.campaign_id
+$$;
+
+-- Расход по дням и каналам — вход витрины маркетинга (план-факт бюджета) и графиков.
+CREATE OR REPLACE VIEW metrics.ad_spend_daily AS
+SELECT day, channel, sum(amount) AS value FROM core.ad_spend GROUP BY day, channel;

@@ -43,7 +43,7 @@ deptService({
     ['GET', '/api/overview', async () => {
       const kpis = await mapKpis(pool, ['lead', 'conversion_lead_to_deal', 'avg_check']);
       const plan = await planCompletion();
-      const funnel = await db('SELECT * FROM metrics.lead_funnel(date_trunc(\'month\', metrics.as_of())::date, metrics.as_of())');
+      const funnel = await db('SELECT f.*, metrics.channel_title(f.channel) AS channel_title FROM metrics.lead_funnel(date_trunc(\'month\', metrics.as_of())::date, metrics.as_of()) f');
       const series = await db("SELECT label, value FROM metrics.series('lead', 'month', 12)");
       return { kpis, plan, funnel, series };
     }],

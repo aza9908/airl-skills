@@ -29,7 +29,7 @@ ensure_secret() {
   fi
 }
 touch .env && chmod 600 .env
-for s in LOADER_DB_PASSWORD FIN_DB_PASSWORD SALES_DB_PASSWORD EDU_DB_PASSWORD HUB_DB_PASSWORD AI_DB_PASSWORD; do
+for s in LOADER_DB_PASSWORD FIN_DB_PASSWORD SALES_DB_PASSWORD EDU_DB_PASSWORD HR_DB_PASSWORD MKT_DB_PASSWORD HUB_DB_PASSWORD AI_DB_PASSWORD; do
   ensure_secret "$s"
 done
 if [ -z "${DEMO_PASSWORD:-}" ]; then
@@ -62,13 +62,14 @@ if [ $RELOAD -eq 0 ]; then
 
   echo "2/8 Роли и схемы"
   psqla -v dbname="$DB_NAME" -v loader_pass="$LOADER_DB_PASSWORD" -v fin_pass="$FIN_DB_PASSWORD" \
-        -v sales_pass="$SALES_DB_PASSWORD" -v edu_pass="$EDU_DB_PASSWORD" -v hub_pass="$HUB_DB_PASSWORD" \
+        -v sales_pass="$SALES_DB_PASSWORD" -v edu_pass="$EDU_DB_PASSWORD" -v hr_pass="$HR_DB_PASSWORD" \
+        -v mkt_pass="$MKT_DB_PASSWORD" -v hub_pass="$HUB_DB_PASSWORD" \
         -v ai_pass="$AI_DB_PASSWORD" -f dwh/sql/00_roles_schemas.sql
   echo "3/8 Слой core"
   psqla -f dwh/sql/01_core.sql
 fi
 
-echo "4/8 Синтетические данные 1С, банков, amoCRM, таблицы потоков"
+echo "4/8 Синтетические данные 1С (с ЗУП), банков, amoCRM, рекламных кабинетов, таблиц потоков и вакансий"
 python3 data/generate_1c.py --out data/out
 LOADER_DATABASE_URL="$LOADER_URL" python3 dwh/load_raw.py --src data/out
 echo "   core.load(): $(psql "$LOADER_URL" -X -tAc 'SELECT core.load()') строк"
@@ -103,6 +104,17 @@ SET search_path TO mart_edu;
 \i dwh/modules/kit.sql
 \i dwh/marts/edu_schema.sql
 RESET ROLE;
+SET ROLE svc_hr;
+SET search_path TO mart_hr;
+\i dwh/modules/kit.sql
+\i dwh/modules/onboarding.schema.sql
+\i dwh/marts/hr_schema.sql
+RESET ROLE;
+SET ROLE svc_marketing;
+SET search_path TO mart_marketing;
+\i dwh/modules/kit.sql
+\i dwh/marts/marketing_schema.sql
+RESET ROLE;
 SET ROLE svc_hub;
 \i dwh/marts/hub_schema.sql
 RESET ROLE;
@@ -111,6 +123,8 @@ SQL
   psqla -f dwh/marts/finance_config.sql >/dev/null
   psqla -f dwh/marts/sales_config.sql >/dev/null
   psqla -f dwh/marts/edu_config.sql >/dev/null
+  psqla -f dwh/marts/hr_config.sql >/dev/null
+  psqla -f dwh/marts/marketing_config.sql >/dev/null
   psqla -f dwh/sql/05_grants_ai.sql
 else
   psqla -c "SET ROLE svc_finance; SET search_path TO mart_finance; SELECT pnl_rebuild('nightly'); SELECT bank_suggest('nightly');" >/dev/null

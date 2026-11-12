@@ -8,7 +8,8 @@ from PIL import Image, ImageDraw, ImageFont
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TARGETS = {"hub": ("services/hub/public/icons", "AIRL"), "finance": ("services/finance/public/icons", "ФИН"),
-           "sales": ("services/sales/public/icons", "ПРОД"), "edu": ("services/edu/public/icons", "ОБУЧ")}
+           "sales": ("services/sales/public/icons", "ПРОД"), "edu": ("services/edu/public/icons", "ОБУЧ"),
+           "hr": ("services/hr/public/icons", "HR"), "marketing": ("services/marketing/public/icons", "МАРК")}
 BG, ACC, FG = (22, 22, 26), (143, 123, 240), (244, 244, 250)
 
 

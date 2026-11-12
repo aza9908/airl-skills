@@ -3,7 +3,7 @@
 -- Повторный запуск безопасен.
 
 -- Показатели — всем читателям.
-GRANT SELECT ON ALL TABLES IN SCHEMA metrics TO svc_finance, svc_sales, svc_edu, svc_hub, ai_reader;
+GRANT SELECT ON ALL TABLES IN SCHEMA metrics TO svc_finance, svc_sales, svc_edu, svc_hr, svc_marketing, svc_hub, ai_reader;
 
 -- Финансы: адаптеры модулей + core по data.reads.
 GRANT SELECT ON mart_finance.src_pnl_entries, mart_finance.src_pnl_cash, mart_finance.src_receivables_docs,
@@ -19,3 +19,9 @@ GRANT SELECT ON core.leads, core.managers TO svc_sales;
 GRANT SELECT ON core.cohorts, core.enrollments TO svc_edu;
 GRANT SELECT (client_id, kind, name) ON core.clients TO svc_edu;
 
+
+-- HR: только адаптер онбординга (ФИО для экрана HR); вакансии, ФОТ и отсутствия — агрегаты из metrics.
+-- Таблиц core (ФИО, ЗУП) сервис не читает.
+GRANT SELECT ON mart_hr.src_onb_employees TO svc_hr;
+
+-- Маркетинг: всё из metrics (расход, кампании, каналы). core и витрины других отделов — нет.

@@ -2,7 +2,7 @@
   "company": "AIRL (демо)",
   "language": "русский",
   "period": "месяц с 1-го по вчера",
-  "max_lines": 12,
+  "max_lines": 14,
   "model": "claude-opus-5-5",
   "effort": "medium",
   "titles": {
@@ -17,19 +17,82 @@
     "cohort_fill_rate": "Заполненность потоков",
     "bank_unmatched_count": "Неразнесённые строки выписки",
     "plan_completion:revenue": "Выполнение плана по выручке",
-    "edu_at_risk": "Слушатели под риском отсева"
+    "edu_at_risk": "Слушатели под риском отсева",
+    "payroll_fund": "Фонд оплаты труда",
+    "open_vacancies": "Открытые вакансии",
+    "onboarding_on_time_rate": "Онбординг в срок",
+    "ad_spend": "Расход на рекламу",
+    "cpl": "Цена заявки (CPL)",
+    "romi": "Окупаемость рекламы (ROMI)"
   },
   "sources": [
-    {"name": "Финансы", "sql": "SELECT metric_id, period, value, unit, status FROM metrics.m_revenue ORDER BY period DESC LIMIT 2"},
-    {"name": "Финансы", "sql": "SELECT metric_id, period, value, unit, status FROM metrics.m_gross_margin WHERE metric_id = 'gross_margin:all' ORDER BY period DESC LIMIT 2"},
-    {"name": "Финансы", "sql": "SELECT metric_id, period, value, unit, status FROM metrics.m_cash_balance ORDER BY period DESC LIMIT 2"},
-    {"name": "Финансы", "sql": "SELECT metric_id, period, value, unit, status FROM metrics.m_receivables_overdue ORDER BY period DESC LIMIT 2"},
-    {"name": "Финансы", "sql": "SELECT metric_id, period, value, unit, status FROM mart_finance.m_bank_unmatched_count"},
-    {"name": "Продажи", "sql": "SELECT metric_id, period, value, unit, status FROM metrics.m_lead ORDER BY period DESC LIMIT 2"},
-    {"name": "Продажи", "sql": "SELECT metric_id, period, value, unit, status FROM metrics.m_conversion_lead_to_deal ORDER BY period DESC LIMIT 2"},
-    {"name": "Продажи", "sql": "SELECT metric_id, period, value, unit, status FROM mart_sales.m_plan_completion WHERE metric_id = 'plan_completion:revenue' ORDER BY period DESC LIMIT 2"},
-    {"name": "Обучение", "sql": "SELECT metric_id, period, value, unit, status FROM metrics.m_enrollments ORDER BY period DESC LIMIT 2"},
-    {"name": "Обучение", "sql": "SELECT metric_id, period, value, unit, status FROM metrics.m_cohort_fill_rate ORDER BY period DESC LIMIT 2"},
-    {"name": "Обучение", "sql": "SELECT metric_id, period, value, unit, status FROM mart_edu.m_edu_at_risk"}
+    {
+      "name": "Финансы",
+      "sql": "SELECT metric_id, period, value, unit, status FROM metrics.m_revenue ORDER BY period DESC LIMIT 2"
+    },
+    {
+      "name": "Финансы",
+      "sql": "SELECT metric_id, period, value, unit, status FROM metrics.m_gross_margin WHERE metric_id = 'gross_margin:all' ORDER BY period DESC LIMIT 2"
+    },
+    {
+      "name": "Финансы",
+      "sql": "SELECT metric_id, period, value, unit, status FROM metrics.m_cash_balance ORDER BY period DESC LIMIT 2"
+    },
+    {
+      "name": "Финансы",
+      "sql": "SELECT metric_id, period, value, unit, status FROM metrics.m_receivables_overdue ORDER BY period DESC LIMIT 2"
+    },
+    {
+      "name": "Финансы",
+      "sql": "SELECT metric_id, period, value, unit, status FROM mart_finance.m_bank_unmatched_count"
+    },
+    {
+      "name": "Продажи",
+      "sql": "SELECT metric_id, period, value, unit, status FROM metrics.m_lead ORDER BY period DESC LIMIT 2"
+    },
+    {
+      "name": "Продажи",
+      "sql": "SELECT metric_id, period, value, unit, status FROM metrics.m_conversion_lead_to_deal ORDER BY period DESC LIMIT 2"
+    },
+    {
+      "name": "Продажи",
+      "sql": "SELECT metric_id, period, value, unit, status FROM mart_sales.m_plan_completion WHERE metric_id = 'plan_completion:revenue' ORDER BY period DESC LIMIT 2"
+    },
+    {
+      "name": "Обучение",
+      "sql": "SELECT metric_id, period, value, unit, status FROM metrics.m_enrollments ORDER BY period DESC LIMIT 2"
+    },
+    {
+      "name": "Обучение",
+      "sql": "SELECT metric_id, period, value, unit, status FROM metrics.m_cohort_fill_rate ORDER BY period DESC LIMIT 2"
+    },
+    {
+      "name": "Обучение",
+      "sql": "SELECT metric_id, period, value, unit, status FROM mart_edu.m_edu_at_risk"
+    },
+    {
+      "name": "HR",
+      "sql": "SELECT metric_id, period, value, unit, status FROM metrics.m_payroll_fund ORDER BY period DESC LIMIT 2"
+    },
+    {
+      "name": "HR",
+      "sql": "SELECT metric_id, period, value, unit, status FROM metrics.m_open_vacancies ORDER BY period DESC LIMIT 2"
+    },
+    {
+      "name": "HR",
+      "sql": "SELECT metric_id, period, value, unit, status FROM mart_hr.m_onboarding_on_time_rate ORDER BY period DESC LIMIT 2"
+    },
+    {
+      "name": "Маркетинг",
+      "sql": "SELECT metric_id, period, value, unit, status FROM metrics.m_ad_spend ORDER BY period DESC LIMIT 2"
+    },
+    {
+      "name": "Маркетинг",
+      "sql": "SELECT metric_id, period, value, unit, status FROM metrics.m_cpl ORDER BY period DESC LIMIT 2"
+    },
+    {
+      "name": "Маркетинг",
+      "sql": "SELECT metric_id, period, value, unit, status FROM metrics.m_romi ORDER BY period DESC LIMIT 2"
+    }
   ]
 }

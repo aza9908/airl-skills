@@ -16,7 +16,7 @@
     view.innerHTML = head('Продажи', 'Загружаем…') + loading(4);
     const d = await api(`${B}/api/overview`);
     const plan = d.plan.map((p) => `<div class="kpi ${esc(p.status)}"><div class="l">${esc(PLAN_TITLE[p.metric_id] || p.metric_id)}</div><div class="v">${fmtValue(p.value, '%')}</div><div class="s">модуль план-факт · ${esc(p.period)} · светофор по прогнозу</div></div>`).join('');
-    const rows = d.funnel.map((c) => `<tr><td data-label="Канал">${esc(c.channel)}</td><td class="n" data-label="Заявки">${c.leads}</td><td class="n" data-label="В работе">${c.open}</td><td class="n" data-label="Отказ">${c.lost}</td><td class="n" data-label="Оплата">${c.won}</td></tr>`).join('');
+    const rows = d.funnel.map((c) => `<tr><td data-label="Канал">${esc(c.channel_title || c.channel)}</td><td class="n" data-label="Заявки">${c.leads}</td><td class="n" data-label="В работе">${c.open}</td><td class="n" data-label="Отказ">${c.lost}</td><td class="n" data-label="Оплата">${c.won}</td></tr>`).join('');
     view.innerHTML = head('Продажи', 'Текущий месяц с 1-го по вчера · заявки из amoCRM, оплаты из 1С · цифры из metrics')
       + `<div class="kpis">${d.kpis.map((k) => kpiCard({ ...k, id: k.metric_id }, { sub: `было ${fmtValue(k.prev_value, k.unit)}` })).join('')}${plan}</div>`
       + `<div class="grid2"><div class="card"><h2>Заявки по месяцам <span class="sub">без дублей</span></h2>${barChart(d.series.map((s, i) => ({ label: s.label, value: s.value, cls: i === d.series.length - 1 ? 'cur' : '' })), { fmt: (v) => String(Math.round(v)) })}</div>

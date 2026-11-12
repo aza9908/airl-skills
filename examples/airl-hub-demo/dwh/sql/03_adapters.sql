@@ -19,10 +19,11 @@ SELECT d.doc_id                                            AS entry_id,
        CASE WHEN d.is_intragroup THEN 'GRP-' || d.counterparty_entity ELSE d.client_id END AS counterparty_id
 FROM core.sales_docs d
 UNION ALL
+-- Расходы — из той же ленты, что считает metrics (оплата труда ЗУП по дням месяца), иначе модуль и хаб разойдутся.
 SELECT e.expense_id, e.doc_date, e.account_code, e.amount_net::numeric(18,2), 'KZT'::char(3), e.entity_id,
        'expense', e.expense_id,
        CASE WHEN e.is_intragroup THEN 'GRP-' || le.entity_id ELSE e.supplier_id END
-FROM core.expenses e
+FROM metrics.expense_entries e
 LEFT JOIN core.suppliers s ON s.supplier_id = e.supplier_id
 LEFT JOIN core.legal_entities le ON le.bin = s.tax_id AND s.is_group;
 
@@ -89,3 +90,23 @@ UNION ALL
 SELECT 'enrollments', day, 'company', 'all', value FROM metrics.enrollments_daily
 UNION ALL
 SELECT 'lead', day, 'company', 'all', value FROM metrics.lead_daily;
+
+-- ===================== mart_hr =====================
+
+-- onboarding: сотрудники из 1С (ЗУП). ФИО — ПДн: экраны модуля показывают display_name («Имя Ф.»),
+-- сервис маскирует его для ролей не из HR. Руководитель — глава отдела (для главы — генеральный директор).
+CREATE OR REPLACE VIEW mart_hr.src_onb_employees AS
+WITH heads AS (
+    SELECT DISTINCT ON (department) department, emp_id FROM core.employees
+    WHERE position ~ '^(Руководитель|Финансовый директор|Технический директор|Генеральный директор)'
+      AND (fire_date IS NULL OR fire_date > current_date)
+    ORDER BY department, hire_date DESC
+), ceo AS (
+    SELECT emp_id FROM core.employees WHERE position = 'Генеральный директор' AND fire_date IS NULL ORDER BY hire_date LIMIT 1
+)
+SELECT e.emp_id AS employee_id, n.full_name, e.position, e.department, e.hire_date AS hired_at,
+       CASE WHEN h.emp_id IS NULL OR h.emp_id = e.emp_id THEN (SELECT emp_id FROM ceo) ELSE h.emp_id END AS manager_id,
+       (e.fire_date IS NULL OR e.fire_date > current_date) AS active
+FROM core.employees e
+JOIN core.employee_names n USING (emp_id)
+LEFT JOIN heads h USING (department);

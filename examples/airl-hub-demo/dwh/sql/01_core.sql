@@ -155,6 +155,7 @@ CREATE TABLE IF NOT EXISTS core.leads (
     loss_reason  text
 );
 CREATE INDEX IF NOT EXISTS leads_date_idx ON core.leads (created_date);
+ALTER TABLE core.leads ADD COLUMN IF NOT EXISTS campaign text;   -- utm_campaign из amoCRM
 
 CREATE TABLE IF NOT EXISTS core.cohorts (
     cohort_code text PRIMARY KEY,
@@ -175,7 +176,7 @@ CREATE TABLE IF NOT EXISTS core.enrollments (
     final_project boolean NOT NULL
 );
 
--- Сотрудники: без ФИО и окладов (их нет ни в одном сервисе — карта, раздел 7).
+-- Сотрудники: без ФИО и окладов (ФИО — отдельно в core.employee_names, только для HR; окладов нет).
 CREATE TABLE IF NOT EXISTS core.employees (
     emp_id      text PRIMARY KEY,
     entity_id   text NOT NULL,
@@ -184,6 +185,73 @@ CREATE TABLE IF NOT EXISTS core.employees (
     hire_date   date NOT NULL,
     fire_date   date
 );
+
+-- ФИО сотрудников — ПДн, отдельно от карточки: читает только адаптер HR (mart_hr.src_onb_employees).
+-- Оклады в core не загружаются вовсе: ФОТ — только суммой по отделу и месяцу.
+CREATE TABLE IF NOT EXISTS core.employee_names (
+    emp_id      text PRIMARY KEY REFERENCES core.employees,
+    full_name   text NOT NULL
+);
+
+-- ФОТ из 1С:ЗУП: начислено + налоги работодателя, по юрлицу × отделу × месяцу (без людей).
+-- is_final = false — плановое начисление текущего месяца (предварительно).
+CREATE TABLE IF NOT EXISTS core.payroll_monthly (
+    entity_id      text    NOT NULL,
+    department     text    NOT NULL,
+    month          date    NOT NULL,
+    headcount      int     NOT NULL,
+    accrued        numeric(18,2) NOT NULL,
+    employer_taxes numeric(18,2) NOT NULL,
+    is_final       boolean NOT NULL,
+    PRIMARY KEY (entity_id, department, month)
+);
+
+-- Отсутствия из 1С:ЗУП (отпуск, больничный): дни по отделу × месяцу, без людей
+-- (больничный — сведения о здоровье, по человеку в хаб не попадает).
+CREATE TABLE IF NOT EXISTS core.absences_monthly (
+    department  text NOT NULL,
+    month       date NOT NULL,
+    kind        text NOT NULL CHECK (kind IN ('vacation', 'sick')),
+    days        int  NOT NULL,
+    people      int  NOT NULL,
+    PRIMARY KEY (department, month, kind)
+);
+
+-- Вакансии из таблицы HR: открыта → закрыта наймом | отменена.
+CREATE TABLE IF NOT EXISTS core.vacancies (
+    vacancy_id    text PRIMARY KEY,
+    position      text NOT NULL,
+    department    text NOT NULL,
+    opened        date NOT NULL,
+    closed        date,
+    status        text NOT NULL CHECK (status IN ('open', 'closed', 'cancelled')),
+    source        text NOT NULL,
+    candidates    int,
+    hired_emp_id  text
+);
+
+-- Рекламные кампании (кабинеты Meta, Google, Telegram и таблица бюджета маркетинга).
+-- campaign_id = utm_campaign — по нему склеиваются расход и заявки amoCRM.
+CREATE TABLE IF NOT EXISTS core.ad_campaigns (
+    campaign_id text PRIMARY KEY,
+    channel     text NOT NULL,              -- как core.leads.channel (utm_source)
+    cabinet     text NOT NULL,
+    title       text NOT NULL,
+    start_date  date NOT NULL,
+    end_date    date
+);
+
+-- Расход по дням и кампаниям, без НДС, KZT.
+CREATE TABLE IF NOT EXISTS core.ad_spend (
+    day         date NOT NULL,
+    campaign_id text NOT NULL REFERENCES core.ad_campaigns,
+    channel     text NOT NULL,
+    amount      numeric(18,2) NOT NULL,
+    impressions int,
+    clicks      int,
+    PRIMARY KEY (day, campaign_id)
+);
+CREATE INDEX IF NOT EXISTS ad_spend_day_idx ON core.ad_spend (day);
 
 CREATE TABLE IF NOT EXISTS core.load_log (
     id          bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -204,7 +272,8 @@ BEGIN
     PERFORM pg_advisory_xact_lock(hashtext('core.load'));
     INSERT INTO core.load_log DEFAULT VALUES RETURNING id INTO v_log;
 
-    TRUNCATE core.enrollments, core.cohorts, core.leads, core.managers, core.bank_lines,
+    TRUNCATE core.ad_spend, core.ad_campaigns, core.vacancies, core.absences_monthly, core.payroll_monthly,
+             core.employee_names, core.enrollments, core.cohorts, core.leads, core.managers, core.bank_lines,
              core.payments_out, core.expenses, core.payments_in, core.cash_openings,
              core.cash_accounts, core.sales_docs, core.suppliers, core.client_source_map,
              core.clients, core.employees, core.legal_entities;
@@ -308,12 +377,13 @@ BEGIN
                x.pipeline, x.utm_source, x.status, NULLIF(x.price, '')::numeric AS price,
                x.responsible_user_id, md5(x.contact_phone) AS contact_key, x.contact_phone,
                NULLIF(x.company_bin, '') AS company_bin, NULLIF(x.closed_at, '')::date AS closed_date,
-               NULLIF(x.loss_reason, '') AS loss_reason,
+               NULLIF(x.loss_reason, '') AS loss_reason, NULLIF(x.utm_campaign, '') AS utm_campaign,
                lag(x.created_at::timestamptz) OVER (PARTITION BY md5(x.contact_phone) ORDER BY x.created_at::timestamptz, x.id) AS prev_at
         FROM raw_amocrm.leads x
     ),
     cl AS (SELECT DISTINCT ON (phone) phone, client_id FROM core.clients WHERE kind = 'person' AND phone IS NOT NULL ORDER BY phone, client_id)
-    INSERT INTO core.leads
+    INSERT INTO core.leads (lead_id, created_at, created_date, pipeline, channel, status, stage, amount, manager_id,
+                            client_id, contact_key, is_duplicate, closed_date, loss_reason, campaign)
     SELECT l.id, l.created_at, l.created_date, l.pipeline, l.utm_source, l.status,
            CASE l.status WHEN 'Успешно реализовано' THEN 'won' WHEN 'Закрыто и не реализовано' THEN 'lost' ELSE 'open' END,
            l.price, l.responsible_user_id,
@@ -321,7 +391,7 @@ BEGIN
                     (SELECT cl.client_id FROM cl WHERE l.company_bin IS NULL AND cl.phone = l.contact_phone)),
            l.contact_key,
            COALESCE(l.prev_at >= l.created_at - interval '30 days', false),
-           l.closed_date, l.loss_reason
+           l.closed_date, l.loss_reason, l.utm_campaign
     FROM l;
 
     INSERT INTO core.cohorts
@@ -337,6 +407,32 @@ BEGIN
     INSERT INTO core.employees
     SELECT ref, infobase, podrazdelenie, dolzhnost, hire_date::date, NULLIF(fire_date, '')::date
     FROM raw_1c.sotrudniki;
+    INSERT INTO core.employee_names SELECT ref, fio FROM raw_1c.sotrudniki;
+
+    INSERT INTO core.payroll_monthly
+    SELECT z.infobase, z.podrazdelenie, z.month::date, count(*), sum(z.nachisleno::numeric),
+           sum(z.nalogi_rabotodatelya::numeric), bool_and(z.status = 'final')
+    FROM raw_1c.zup_nachisleniya z GROUP BY 1, 2, 3;
+
+    -- отсутствие уже разрезано по месяцам в ЗУП; дни — календарные
+    INSERT INTO core.absences_monthly
+    SELECT s.podrazdelenie, date_trunc('month', o.date_from::date)::date,
+           CASE o.kind WHEN 'Больничный' THEN 'sick' ELSE 'vacation' END,
+           sum(o.date_to::date - o.date_from::date + 1), count(DISTINCT o.tab_no)
+    FROM raw_1c.zup_otsutstviya o
+    JOIN raw_1c.sotrudniki s ON s.tab_no = o.tab_no AND s.infobase = o.infobase
+    GROUP BY 1, 2, 3;
+
+    INSERT INTO core.vacancies
+    SELECT v.vacancy_id, v.position, v.department, v.opened::date, NULLIF(v.closed, '')::date, v.status, v.source,
+           NULLIF(v.candidates, '')::int, s.ref
+    FROM raw_sheets.vacancies v LEFT JOIN raw_1c.sotrudniki s ON s.tab_no = NULLIF(v.hired_tab_no, '');
+
+    INSERT INTO core.ad_campaigns
+    SELECT utm_campaign, channel, cabinet, title, start_date::date, NULLIF(end_date, '')::date FROM raw_ads.ad_campaigns;
+    INSERT INTO core.ad_spend
+    SELECT date::date, utm_campaign, channel, sum(spend::numeric), sum(impressions::int), sum(clicks::int)
+    FROM raw_ads.ad_spend GROUP BY 1, 2, 3;
 
     SELECT (SELECT count(*) FROM core.sales_docs) + (SELECT count(*) FROM core.payments_in)
          + (SELECT count(*) FROM core.expenses) + (SELECT count(*) FROM core.leads)
@@ -355,3 +451,5 @@ REVOKE EXECUTE ON FUNCTION core.load() FROM PUBLIC;
 -- Владелец показателей читает core целиком (формулы карты), больше ничего.
 GRANT SELECT ON ALL TABLES IN SCHEMA core TO metrics_owner;
 
+-- ФИО сотрудников — только адаптеру HR (выдаёт 04_grants.sql), владельцу показателей не нужны.
+REVOKE SELECT ON core.employee_names FROM metrics_owner;

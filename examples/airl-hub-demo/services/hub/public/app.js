@@ -8,8 +8,9 @@
   const navEl = document.getElementById('nav');
   const GRAINS = [['day', 'День'], ['week', 'Неделя'], ['month', 'Месяц'], ['quarter', 'Квартал']];
   const GRAIN_N = { day: '30 дней', week: '13 недель', month: '18 месяцев', quarter: '6 кварталов' };
-  const LOWER_BETTER = new Set(['receivables_overdue']);
+  const LOWER_BETTER = new Set(['receivables_overdue', 'turnover_rate', 'time_to_hire', 'open_vacancies', 'payroll_fund', 'ad_spend', 'cpl', 'cac']);
   const STATUS_PILL = { ok: ['ok', 'Остаток: в норме'], warning: ['warning', 'Остаток: внимание'], danger: ['rose', 'Остаток: ниже нормы'] };
+  const DEPT_TITLE = { finance: 'Финансы', sales: 'Продажи', marketing: 'Маркетинг', edu: 'Обучение', hr: 'HR' };
   let grain = 'month';
   try { grain = localStorage.getItem('hub.grain') || 'month'; } catch { /* приватный режим */ }
   let me = null;
@@ -41,7 +42,7 @@
     const cash = kpiOf(k, 'cash_balance');
     let g1; let g1t;
     if (fin) { g1t = 'Результат за период'; g1 = ['revenue', 'net_profit', 'gross_margin', 'headcount'].map((id) => kpi(kpiOf(k, id))).join(''); }
-    else { g1t = `Показатели отдела «${{ sales: 'Продажи', edu: 'Обучение' }[ov.departments[0]] || ''}»`; g1 = k.map((m) => kpi(m)).join(''); }
+    else { g1t = `Показатели отдела «${DEPT_TITLE[ov.departments[0]] || ''}»`; g1 = k.map((m) => kpi(m)).join(''); }
     const sales = (x.tiles.tiles || []).find((t) => t.id === 'sales' && t.ok);
     const plan = sales && (sales.metrics || []).find((m) => m.id === 'plan_completion:revenue');
     const g2 = (fin ? kpi(kpiOf(k, 'receivables_overdue'), `было ${fmtValue(kpiOf(k, 'receivables_overdue')?.prev_value, 'KZT')}`) : '')
@@ -120,7 +121,7 @@
     const ks = kpisInOverview ? '' : `<div class="kpis">${ov.kpis.filter((k) => k.department === 'sales').map((k) => kpi(k)).join('')}</div>`;
     const f = x.funnel;
     const tot = f.channels.reduce((s, c) => ({ leads: s.leads + Number(c.leads), won: s.won + Number(c.won) }), { leads: 0, won: 0 });
-    const funnel = f.channels.length ? hbars(f.channels.map((c) => ({ label: c.channel, value: c.leads, sub: `в работе ${c.open} · отказ ${c.lost} · оплата ${c.won}` })), { fmt: (v) => fmtValue(v, 'шт'), one: true })
+    const funnel = f.channels.length ? hbars(f.channels.map((c) => ({ label: c.channel_title || c.channel, value: c.leads, sub: `в работе ${c.open} · отказ ${c.lost} · оплата ${c.won}` })), { fmt: (v) => fmtValue(v, 'шт'), one: true })
       + `<p class="csub">Итого: ${tot.leads} заявок, оплачено ${tot.won}</p>` : empty('Заявок за период нет');
     const leads = x.lead ? barChart(x.lead.points.map((p, i) => ({ label: p.label, value: p.value, cls: i === x.lead.points.length - 1 ? 'cur' : '' })), { fmt: (v) => String(Math.round(v)), span: 'wide' }) : '';
     return `<section class="sec" id="sales">${secHead(no, 'Продажи', 'Заявки из amoCRM и оплаты из 1С — без дублей за 30 дней')}${ks}
@@ -139,12 +140,42 @@
       <div class="actions"><a class="btn" href="/edu/">Открыть сервис «Обучение»</a></div></section>`;
   }
 
-  // ---------- 07 Команда ----------
-  function teamSec(no, ov, x) {
-    const h = kpiOf(ov.kpis, 'headcount');
-    return `<section class="sec" id="team">${secHead(no, 'Команда', 'Численность по кадровому учёту 1С, на конец периода')}
-      ${card('', 'Численность', `${GRAIN_N[grain]} · сейчас ${h ? fmtValue(h.value, h.unit) : '—'}`,
-    x.head ? barChart(x.head.points.map((p, i) => ({ label: p.label, value: p.value, cls: i === x.head.points.length - 1 ? 'cur' : '' })), { fmt: (v) => String(Math.round(v)), height: 220, span: 'full' }) : empty('Нет данных'))}</section>`;
+  // ---------- Маркетинг ----------
+  function marketingSec(no, ov, x, kpisInOverview) {
+    const ks = kpisInOverview ? '' : `<div class="kpis">${ov.kpis.filter((k) => k.department === 'marketing').map((k) => kpi(k)).join('')}</div>`;
+    const m = x.mkt;
+    const spend = m.channels.filter((c) => Number(c.spend) > 0);
+    const sum = spend.reduce((s, c) => s + Number(c.spend), 0);
+    const cpl = m.channels.filter((c) => c.cpl !== null).sort((a, b) => b.cpl - a.cpl);
+    const romi = m.channels.filter((c) => c.romi !== null).sort((a, b) => b.romi - a.romi);
+    const rows = m.campaigns.map((c) => `<tr><td data-label="Кампания">${esc(c.title)}</td><td data-label="Канал">${esc(c.channel_title)}</td>
+      <td class="n" data-label="Расход">${fmtMoney(c.spend)}</td><td class="n" data-label="Заявки">${c.no_leads ? '<span class="badge warning">0</span>' : c.leads}</td>
+      <td class="n" data-label="CPL">${fmtMoney(c.cpl)}</td><td class="n" data-label="ROMI">${fmtValue(c.romi, '%')}</td></tr>`).join('');
+    const sp = x.spend ? barChart(x.spend.points.map((p, i) => ({ label: p.label, value: p.value, cls: i === x.spend.points.length - 1 ? 'cur' : '', title: fmtMoney(p.value) })), { span: 'wide' }) : '';
+    return `<section class="sec" id="marketing">${secHead(no, 'Маркетинг', 'Реклама: расход кабинетов Meta, Google, Telegram и бюджета, заявки amoCRM, оплаты 1С')}${ks}
+      <div class="grid-wide">${card('', 'Расход на рекламу', `${GRAIN_N[grain]} · чёрный — текущий, неполный`, sp)}
+      ${card('mkt-channels', 'Расход по каналам', m.period, spend.length ? donut(spend.map((c) => ({ label: c.channel_title, value: c.spend })), { total: `${fmtShort(sum)} ₸`, cap: 'расход' }) : empty('Расхода за период нет'))}</div>
+      <div class="grid2">${card('', 'Цена заявки по каналам (CPL)', `${m.period} · расход / заявки`, cpl.length ? hbars(cpl.map((c) => ({ label: c.channel_title, value: c.cpl, sub: `${c.leads} заявок · расход ${fmtMoney(c.spend)}` })), { one: true }) : empty('Нет данных'))}
+      ${card('', 'Окупаемость по каналам (ROMI)', `${m.period} · по выручке курса без НДС`, romi.length ? hbars(romi.map((c) => ({ label: c.channel_title, value: Math.max(0, c.romi), text: fmtValue(c.romi, '%'), cls: c.romi <= 100 ? 'danger' : c.romi < 200 ? 'warning' : '', sub: `слушателей ${c.won} · CAC ${fmtMoney(c.cac)}` })), { one: true }) : empty('Нет данных'))}</div>
+      ${card('campaigns', 'Кампании периода', 'самые дорогие · «0» заявок — проверьте UTM-метки', rows ? `<div class="scroll-x"><table class="tbl cards"><thead><tr><th>Кампания</th><th>Канал</th><th class="n">Расход</th><th class="n">Заявки</th><th class="n">CPL</th><th class="n">ROMI</th></tr></thead><tbody>${rows}</tbody></table></div>` : empty('Кампаний нет'))}
+      <div class="actions"><a class="btn" href="/marketing/">Открыть сервис «Маркетинг»</a></div></section>`;
+  }
+
+  // ---------- HR ----------
+  function hrSec(no, ov, x, kpisInOverview) {
+    const ks = kpisInOverview ? '' : `<div class="kpis">${ov.kpis.filter((k) => k.department === 'hr' && k.metric_id !== 'headcount').map((k) => kpi(k)).join('')}</div>`;
+    const h = x.hr;
+    const moves = groupedBars(h.moves.map((m) => m.label), [
+      { name: 'Приняты', values: h.moves.map((m) => m.hires), titles: h.moves.map((m) => `${m.hires} чел.`) },
+      { name: 'Уволены', values: h.moves.map((m) => m.terminations), cls: 's2', titles: h.moves.map((m) => `${m.terminations} чел.`) }], { fmt: (v) => String(Math.round(v)), span: 'wide' });
+    const pay = h.payroll.filter((r) => Number(r.amount) > 0);
+    const vac = h.vacancies.map((v) => `<tr><td data-label="Должность">${esc(v.job_title)}</td><td data-label="Отдел">${esc(v.department)}</td>
+      <td data-label="Открыта">${dmy(v.opened)}</td><td class="n" data-label="Дней"><span class="badge ${v.days_open > 50 ? 'danger' : v.days_open > 35 ? 'warning' : 'ok'}">${v.days_open}</span></td><td data-label="Источник">${esc(v.source)}</td></tr>`).join('');
+    return `<section class="sec" id="hr">${secHead(no, 'HR', 'Кадры 1С:ЗУП и таблица вакансий · без окладов и имён: только суммы по отделам')}${ks}
+      <div class="grid-wide">${card('', 'Найм и увольнения', `${GRAIN_N[grain]} · человек`, moves)}
+      ${card('payroll', 'ФОТ по отделам', `${h.period} · с налогами · отделы до 3 человек объединены`, pay.length ? donut(pay.map((r) => ({ label: `${r.department} · ${r.people} чел.`, value: r.amount })), { total: `${fmtShort(pay.reduce((s, r) => s + Number(r.amount), 0))} ₸`, cap: 'ФОТ' }) : empty('Нет начислений'))}</div>
+      ${card('vacancies', 'Открытые вакансии', 'сколько дней открыта: больше 35 — жёлтая, больше 50 — красная', vac ? `<div class="scroll-x"><table class="tbl cards"><thead><tr><th>Должность</th><th>Отдел</th><th>Открыта</th><th class="n">Дней</th><th>Источник</th></tr></thead><tbody>${vac}</tbody></table></div>` : empty('Открытых вакансий нет'))}
+      <div class="actions"><a class="btn" href="/hr/">Открыть сервис «HR»</a></div></section>`;
   }
 
   // ---------- 08 Операции ----------
@@ -172,8 +203,8 @@
     const d = ov.departments; const fin = d.includes('finance');
     return [
       ['overview', 'Обзор', true], ['income', 'Доходы и расходы', fin], ['money', 'Деньги', fin], ['clients', 'Клиенты и счета', fin],
-      ['sales', 'Продажи', d.includes('sales')], ['edu', 'Обучение', d.includes('edu')],
-      ['team', 'Команда', !!kpiOf(ov.kpis, 'headcount')], ['ops', 'Операции', true],
+      ['sales', 'Продажи', d.includes('sales')], ['marketing', 'Маркетинг', d.includes('marketing')], ['edu', 'Обучение', d.includes('edu')],
+      ['hr', 'HR', d.includes('hr')], ['ops', 'Операции', true],
     ].filter((t) => t[2]).map(([id, title]) => ({ id, title, href: `#${id}` }));
   }
   function setTab(id) {
@@ -208,21 +239,22 @@
       const S = (m) => api(`/hub/api/series?metric=${m}&grain=${grain}`).catch(() => null);
       const [ov, tiles] = await Promise.all([api(`/hub/api/overview?grain=${grain}`), api('/hub/api/tiles').catch(() => ({ tiles: [] }))]);
       const d = ov.departments; const fin = d.includes('finance'); const sales = d.includes('sales'); const edu = d.includes('edu');
-      const ceo = !!kpiOf(ov.kpis, 'headcount');
-      const [pnl, aging, funnel, fc, digest, rev, np, cash, lead, enr, compl, head] = await Promise.all([
+      const mk = d.includes('marketing'); const hr = d.includes('hr');
+      const [pnl, aging, funnel, fc, digest, rev, np, cash, lead, enr, compl, mkt, spend, hrd] = await Promise.all([
         fin ? api(`/hub/api/pnl?grain=${grain}`) : null, fin ? api('/hub/api/aging') : null,
         sales ? api(`/hub/api/funnel?grain=${grain}`) : null, (fin || sales) ? api('/hub/api/forecast').catch(() => null) : null,
         me.role === 'ceo' ? api('/hub/api/digest').catch(() => null) : null,
         fin ? S('revenue') : null, fin ? S('net_profit') : null, fin ? S('cash_balance') : null,
-        sales ? S('lead') : null, edu ? S('enrollments') : null, edu ? S('course_completion_rate') : null, ceo ? S('headcount') : null]);
-      const x = { tiles, pnl, aging, funnel, fc, digest, rev, np, cash, lead, enr, compl, head };
+        sales ? S('lead') : null, edu ? S('enrollments') : null, edu ? S('course_completion_rate') : null,
+        mk ? api(`/hub/api/marketing?grain=${grain}`) : null, mk ? S('ad_spend') : null, hr ? api(`/hub/api/hr?grain=${grain}`) : null]);
+      const x = { tiles, pnl, aging, funnel, fc, digest, rev, np, cash, lead, enr, compl, mkt, spend, hr: hrd };
       tabs = buildTabs(ov);
       const no = (id) => tabs.findIndex((t) => t.id === id) + 1;
       const kpisInOverview = !fin; // без финансов показатели отдела — в «Обзоре»
       const html = {
         overview: () => overviewSec(no('overview'), ov, x), income: () => incomeSec(no('income'), x), money: () => moneySec(no('money'), x),
         clients: () => clientsSec(no('clients'), x), sales: () => salesSec(no('sales'), ov, x, kpisInOverview), edu: () => eduSec(no('edu'), ov, x, kpisInOverview),
-        team: () => teamSec(no('team'), ov, x), ops: () => opsSec(no('ops'), x),
+        marketing: () => marketingSec(no('marketing'), ov, x, kpisInOverview), hr: () => hrSec(no('hr'), ov, x, kpisInOverview), ops: () => opsSec(no('ops'), x),
       };
       const cur = navEl.querySelector('[aria-current]')?.dataset.tab;
       navEl.innerHTML = AIRL.nav(tabs, cur && tabs.some((t) => t.id === cur) ? cur : 'overview');
@@ -251,7 +283,7 @@
   (async () => {
     try { me = await AIRL.topbar('Экран руководителя', 'hub', { brandTag: 'h1' }); } catch (e) { view.innerHTML = errorBox('Не удалось открыть хаб: ' + e.message); return; }
     // Старые адреса разделов (#/finance и т. п.) ведут к нужному разделу страницы.
-    const OLD = { '#/finance': 'income', '#/sales': 'sales', '#/edu': 'edu' };
+    const OLD = { '#/finance': 'income', '#/sales': 'sales', '#/edu': 'edu', '#team': 'hr' };
     const target = OLD[location.hash] || location.hash.replace(/^#\/?/, '');
     await render();
     if (target && document.getElementById(target)) { document.getElementById(target).scrollIntoView(); setTab(target); }

@@ -655,7 +655,7 @@ BEGIN
     SELECT 'pnl-cashflow:overrun:' || r.period || ':' || r.branch_id || ':' || r.line_code || ':' || v_fin,
            'pnl-cashflow', v_channel, v_fin,
            'Перерасход ' || r.period || ', ' || r.branch_id || ': «' || r.line_title || '» '
-           || to_char(-r.fact, 'FM999G999G999G990') || ' при бюджете ' || to_char(-r.budget, 'FM999G999G999G990')
+           || replace(to_char(-r.fact, 'FM999,999,999,990'), ',', ' ') || ' при бюджете ' || replace(to_char(-r.budget, 'FM999,999,999,990'), ',', ' ')
            || ' ' || r.currency || CASE WHEN r.preliminary THEN ' (предварительно)' ELSE '' END
     FROM v_pnl_report r
     WHERE r.line_kind = 'article' AND r.is_leaf AND r.branch_id <> 'all'
@@ -668,7 +668,7 @@ BEGIN
     INSERT INTO airl_notifications (dedup_key, module, channel, recipient, text)
     SELECT 'pnl-cashflow:unmapped:' || u.account_code || ':' || v_acc, 'pnl-cashflow', v_channel, v_acc,
            'Счёт ' || u.account_code || ' не сопоставлен со статьёй отчёта: ' || u.entries || ' проводок, '
-           || to_char(abs(u.amount_signed), 'FM999G999G999G990') || ' ' || u.currency
+           || replace(to_char(abs(u.amount_signed), 'FM999,999,999,990'), ',', ' ') || ' ' || u.currency
     FROM v_pnl_unmapped u
     WHERE u.problem = 'no_article'
     ON CONFLICT (dedup_key) DO NOTHING;

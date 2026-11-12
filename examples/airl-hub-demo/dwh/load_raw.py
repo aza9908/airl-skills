@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Загрузка выгрузок (CSV) в сырой слой хранилища: raw_1c, raw_bank, raw_amocrm, raw_sheets.
+"""Загрузка выгрузок (CSV) в сырой слой хранилища: raw_1c (вкл. 1С:ЗУП), raw_bank, raw_amocrm,
+raw_sheets (потоки, вакансии HR), raw_ads (рекламные кабинеты и таблица бюджета маркетинга).
 
 Сырой слой хранит данные «как пришли»: все колонки текстом плюс время загрузки.
 Повторный запуск безопасен: таблица источника перезаписывается целиком в одной
@@ -20,10 +21,11 @@ from psycopg import sql
 SOURCES = {
     "raw_1c": ["organizations", "kontragenty", "dogovory", "nomenklatura", "realizatsiya",
                "realizatsiya_tovary", "postuplenie_rs", "pko", "spisanie_rs", "zatraty",
-               "bank_accounts", "ostatki_dc", "sotrudniki"],
+               "bank_accounts", "ostatki_dc", "sotrudniki", "zup_nachisleniya", "zup_otsutstviya"],
     "raw_bank": ["statement_lines"],
     "raw_amocrm": ["leads", "amo_users"],
-    "raw_sheets": ["cohorts", "cohort_students"],
+    "raw_sheets": ["cohorts", "cohort_students", "vacancies"],
+    "raw_ads": ["ad_campaigns", "ad_spend", "mkt_budget"],
 }
 
 
@@ -48,6 +50,13 @@ def main():
                 ident = sql.Identifier(schema, t)
                 cols = sql.SQL(", ").join(sql.SQL("{} text").format(sql.Identifier(c)) for c in header)
                 with conn.cursor() as cur:
+                    # Колонки выгрузки могли измениться (новое поле источника) — таблицу пересоздаём:
+                    # сырой слой всё равно перезаписывается целиком.
+                    cur.execute("SELECT array_agg(column_name::text ORDER BY ordinal_position) FROM information_schema.columns "
+                                "WHERE table_schema = %s AND table_name = %s AND column_name <> '_loaded_at'", (schema, t))
+                    have = cur.fetchone()[0]
+                    if have is not None and list(have) != header:
+                        cur.execute(sql.SQL("DROP TABLE {}").format(ident))
                     cur.execute(sql.SQL("CREATE TABLE IF NOT EXISTS {} ({}, _loaded_at timestamptz NOT NULL DEFAULT now())")
                                 .format(ident, cols))
                     cur.execute(sql.SQL("TRUNCATE {}").format(ident))

@@ -14,9 +14,19 @@
         reverse_proxy sales:3002
     }
 
+    redir /marketing /marketing/ 308
+    handle /marketing/* {
+        reverse_proxy marketing:3005
+    }
+
     redir /edu /edu/ 308
     handle /edu/* {
         reverse_proxy edu:3003
+    }
+
+    redir /hr /hr/ 308
+    handle /hr/* {
+        reverse_proxy hr:3004
     }
 
     handle {

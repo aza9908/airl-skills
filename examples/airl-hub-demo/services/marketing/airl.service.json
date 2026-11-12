@@ -1,0 +1,31 @@
+{
+  "$schema": "airl.service/v1",
+  "id": "marketing",
+  "title": "Маркетинг",
+  "department": "marketing",
+  "map_version": "1.1",
+  "spec_version": "1.0",
+  "version": "1.0.0",
+  "owner": "Руководитель маркетинга (демо)",
+  "base_path": "/marketing",
+  "roles": {
+    "view": ["ceo", "head_marketing", "staff_marketing"],
+    "edit": ["head_marketing", "staff_marketing"],
+    "summary": ["ceo", "head_marketing"]
+  },
+  "data": {
+    "reads": ["metrics.m_ad_spend", "metrics.m_cpl", "metrics.m_cac", "metrics.m_romi", "metrics.m_marketing_conversion",
+              "metrics.m_lead", "metrics.kpi_period", "metrics.series", "metrics.period_bounds", "metrics.marketing_channels",
+              "metrics.marketing_campaigns", "metrics.ad_spend_daily"],
+    "reads_shared": [],
+    "writes": ["mart_marketing"]
+  },
+  "modules": [],
+  "public_paths": [],
+  "hub": {
+    "health": "/marketing/healthz",
+    "summary": "/marketing/api/hub/summary",
+    "metrics": ["ad_spend", "cpl", "cac", "romi"]
+  },
+  "pii": []
+}

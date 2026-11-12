@@ -83,6 +83,26 @@ services:
       AIRL_JWKS_URL: http://hub:3000/.well-known/jwks.json
     ports: ["127.0.0.1:3003:3003"]
 
+  hr:
+    <<: *svc
+    build: { context: ., args: { SERVICE: hr, APP_VERSION: "${HR_TAG:-1.0.0}" } }
+    image: airl-hub-demo-hr:${HR_TAG:-1.0.0}
+    environment:
+      PORT: "3004"
+      DATABASE_URL: postgresql://svc_hr:${HR_DB_PASSWORD}@db:5432/airl_demo_hub
+      AIRL_JWKS_URL: http://hub:3000/.well-known/jwks.json
+    ports: ["127.0.0.1:3004:3004"]
+
+  marketing:
+    <<: *svc
+    build: { context: ., args: { SERVICE: marketing, APP_VERSION: "${MARKETING_TAG:-1.0.0}" } }
+    image: airl-hub-demo-marketing:${MARKETING_TAG:-1.0.0}
+    environment:
+      PORT: "3005"
+      DATABASE_URL: postgresql://svc_marketing:${MKT_DB_PASSWORD}@db:5432/airl_demo_hub
+      AIRL_JWKS_URL: http://hub:3000/.well-known/jwks.json
+    ports: ["127.0.0.1:3005:3005"]
+
   caddy:
     image: caddy:2.8-alpine
     restart: unless-stopped
@@ -91,7 +111,7 @@ services:
     ports: ["${PROXY_PORT:-8080}:80", "443:443"]
     volumes: [./proxy/Caddyfile:/etc/caddy/Caddyfile:ro, caddy_data:/data]
     networks: [web]
-    depends_on: [hub, finance, sales, edu]
+    depends_on: [hub, finance, sales, edu, hr, marketing]
 
 volumes:
   db_data:

@@ -23,6 +23,21 @@ WITH checks AS (
     SELECT 'plan-fact: факт выручки месяца = metrics.m_revenue', to_char(p.month, 'YYYY-MM'), p.fact_value, m.value
     FROM mart_sales.v_pf_plan_fact p JOIN metrics.m_revenue m ON m.period = to_char(p.month, 'YYYY-MM')
     WHERE p.metric_id = 'revenue' AND p.dimension_type = 'company' AND p.month < date_trunc('month', current_date)
+    UNION ALL
+    -- Маркетинг: расход рекламных кабинетов и таблицы бюджета = проводки 1С «Реклама» за закрытый месяц
+    SELECT 'ad_spend: кабинеты = 1С «Реклама» (закрытые месяцы)', m.period, m.value,
+           (SELECT sum(e.amount_net) FROM core.expenses e WHERE e.article = 'Реклама' AND to_char(e.doc_date, 'YYYY-MM') = m.period)
+    FROM metrics.m_ad_spend m WHERE m.period < to_char(current_date, 'YYYY-MM')
+    UNION ALL
+    -- HR: ФОТ из ЗУП по дням месяца = проводка 1С «ФОТ» за закрытый месяц
+    SELECT 'payroll_fund: ЗУП по дням = 1С «ФОТ» (закрытые месяцы)', m.period, m.value,
+           (SELECT sum(e.amount_net) FROM core.expenses e WHERE e.article = 'ФОТ' AND to_char(e.doc_date, 'YYYY-MM') = m.period)
+    FROM metrics.m_payroll_fund m WHERE m.period < to_char(current_date, 'YYYY-MM')
+    UNION ALL
+    -- HR: численность хаба = работающие по ЗУП в текущем месяце
+    SELECT 'headcount: metrics = начисления ЗУП текущего месяца', to_char(current_date, 'YYYY-MM'),
+           (SELECT value FROM metrics.kpi_period('day') WHERE metric_id = 'headcount'),
+           (SELECT sum(headcount) FROM core.payroll_monthly WHERE month = date_trunc('month', current_date)::date)
 )
 SELECT check_name, count(*) AS periods, count(*) FILTER (WHERE module_value IS DISTINCT FROM metrics_value) AS mismatches,
        max(abs(module_value - metrics_value)) AS max_diff

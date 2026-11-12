@@ -735,7 +735,7 @@ BEGIN
     INSERT INTO airl_notifications (dedup_key, module, channel, recipient, text)
     SELECT 'bank-reconciliation:unmatched:' || u.line_id || ':' || v_rcp, 'bank-reconciliation', v_channel, v_rcp,
            'Не разнесён платёж ' || to_char(u.value_date, 'DD.MM') || ': ' || u.counterparty_name || ', '
-           || to_char(u.amount, 'FM999G999G999G990D00') || ' ' || u.currency || ' (' || u.age_days || ' дн.)'
+           || replace(replace(to_char(u.amount, 'FM999,999,999,990.00'), ',', ' '), '.', ',') || ' ' || u.currency || ' (' || u.age_days || ' дн.)'
     FROM v_bank_unmatched u
     WHERE u.overdue
     ON CONFLICT (dedup_key) DO NOTHING;

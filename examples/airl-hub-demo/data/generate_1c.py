@@ -40,8 +40,24 @@ COMPANY_WORDS = ["Ритейл", "Логистик", "Агро", "Медиа", "
                  "Энерго", "Фарм", "Транс", "Девелопмент", "Сервис", "Трейд", "Консалт"]
 CHANNELS = [("instagram", 0.30), ("site", 0.25), ("telegram", 0.15), ("referral", 0.12),
             ("meta_form", 0.13), ("event", 0.05)]
+SOURCES = ["hh.kz", "Telegram-каналы", "Рекомендация", "LinkedIn", "Карьерный сайт AIRL"]
+# Доля рекламного бюджета по каналам (amoCRM utm_source): site — поиск Google и сайт
+MKT_SHARES = [("instagram", 0.34), ("site", 0.24), ("telegram", 0.12), ("meta_form", 0.18),
+              ("event", 0.08), ("referral", 0.04)]
+CABINET = {"instagram": "Meta Ads", "meta_form": "Meta Ads", "site": "Google Ads", "telegram": "Telegram Ads",
+           "event": "Таблица бюджета", "referral": "Таблица бюджета"}
 LOSS = ["Дорого", "Не устроили даты потока", "Не отвечает", "Выбрал другую школу",
         "Отложил на следующий год", "Нужна рассрочка дольше"]
+
+
+def campaign_title(nm, ch):
+    kind = {"ig_vibeops": "Instagram · курс VibeOps", "ig_corp_ai": "Instagram · обучение команд",
+            "google_search": "Google · поиск «курс ИИ»", "tg_channels": "Telegram · посевы в каналах",
+            "meta_leadform": "Meta · лид-форма курса", "event_meetup": "Митап AIRL",
+            "referral_program": "Реферальная программа"}
+    base = nm.rsplit("_", 1)[0] if nm != "referral_program" else nm
+    ym = nm.rsplit("_", 1)[1] if nm != "referral_program" else ""
+    return kind.get(base, nm) + (f" · {ym[2:]}.20{ym[:2]}" if ym else "")
 
 
 def money(x):
@@ -70,7 +86,17 @@ class Gen:
             "organizations", "kontragenty", "dogovory", "nomenklatura", "realizatsiya",
             "realizatsiya_tovary", "postuplenie_rs", "pko", "spisanie_rs", "zatraty",
             "bank_accounts", "ostatki_dc", "sotrudniki", "statement_lines", "leads",
-            "amo_users", "cohorts", "cohort_students"]}
+            "amo_users", "cohorts", "cohort_students",
+            # HR: 1С:ЗУП (начисления, отсутствия) и таблица вакансий HR
+            "zup_nachisleniya", "zup_otsutstviya", "vacancies",
+            # Маркетинг: рекламные кабинеты и таблица бюджета маркетинга
+            "ad_campaigns", "ad_spend", "mkt_budget"]}
+        # Отдельные генераторы для HR и маркетинга: основной поток случайных чисел не сдвигается,
+        # поэтому деньги, заявки и потоки остаются теми же, что и до появления этих отделов.
+        self.hr_rnd = random.Random(seed * 7 + 3)
+        self.mkt_rnd = random.Random(seed * 11 + 5)
+        self.campaigns = {}     # (channel, ГГГГ-ММ) -> [utm_campaign]
+        self.campaign_seen = set()
         self.seq = {}
         self.phones_used = set()
         self.kontr = {}         # (infobase, key) -> ref
@@ -188,6 +214,7 @@ class Gen:
                      oklad=salary[pos])
             self.rows["sotrudniki"].append(e)
             self.employees.append(e)
+        self.setup_hr(salary)
         # Менеджеры amoCRM
         self.managers = []
         for i in range(5):
@@ -321,6 +348,7 @@ class Gen:
     # ---------- лиды ----------
     def lead(self, created, phone, name, won=False, price=0, company_bin="", closed=None, channel=None):
         ch = channel or self.rnd.choices([c for c, _ in CHANNELS], [w for _, w in CHANNELS])[0]
+        campaign = self.campaign_for(ch, created)
         if won:
             status = "Успешно реализовано"
         elif created > self.today - timedelta(days=21) and self.rnd.random() < 0.55:
@@ -340,7 +368,7 @@ class Gen:
             id=str(30_000_000 + len(self.rows["leads"]) + 1), name=f"Заявка: {name}", created_at=ts.isoformat(),
             pipeline="B2B" if company_bin else "Курс VibeOps", status=status, price=money(price),
             responsible_user_id=self.rnd.choice(self.managers), contact_name=name, contact_phone=phone,
-            company_bin=company_bin, utm_source=ch, closed_at=closed_at, loss_reason=loss))
+            company_bin=company_bin, utm_source=ch, utm_campaign=campaign, closed_at=closed_at, loss_reason=loss))
 
     # ---------- сценарий ----------
     def run(self):
@@ -493,16 +521,10 @@ class Gen:
                     self.receipt(sale, pay, sale["gross"], kname="ТОО «AI Research Labs» (демо-копия)", kbin="991400000001")
             # Расходы месяца
             me = month_end(m)
-            # ФОТ: начисление в конце месяца, выплата 5-го следующего
+            # ФОТ: расчёт 1С:ЗУП по сотрудникам (текущий месяц — плановое начисление «предварительно»),
+            # в 1С:Бухгалтерию — одной проводкой в конце закрытого месяца, выплата 5-го следующего.
             for ib in ("airl", "airl_dev"):
-                fot = 0
-                for e in self.employees:
-                    if e["infobase"] != ib:
-                        continue
-                    h = date.fromisoformat(e["hire_date"])
-                    fd = date.fromisoformat(e["fire_date"]) if e["fire_date"] else None
-                    if h <= me and (fd is None or fd >= m):
-                        fot += e["oklad"] * 1.115  # с социальным налогом и отчислениями
+                fot = self.payroll_month(ib, m, me, final=me < T)
                 if me < T:
                     self.expense(ib, me, "SUP-budget", "7210.01", "ФОТ", fot, doc_type="НачислениеЗарплаты",
                                  vat=False, pay_after=5, cf_article="Зарплата")
@@ -531,6 +553,12 @@ class Gen:
             for k in range(3):
                 self.expense("airl", m + timedelta(days=3 + 9 * k), "SUP-ads", "7110", "Реклама", ads / 3,
                              pay_after=1, cf_article="Оплата поставщикам")
+            # те же деньги в рекламных кабинетах и таблице бюджета маркетинга — по дням и кампаниям;
+            # бюджет (таблица маркетинга) — без перерасхода последних месяцев
+            plan = 2_600_000 * f
+            for ch, share in MKT_SHARES:
+                self.rows["mkt_budget"].append(dict(month=m.isoformat(), channel=ch, budget=money(round(plan * share, -4))))
+            self.ad_spend_month(m, sum(money(ads / 3) for _ in range(3)))
             # НДС к уплате за прошлый месяц (25-го): 12/112 продаж минус НДС поставщиков — только деньги
             pm = add_months(m, -1)
             if pm >= self.start:
@@ -542,9 +570,10 @@ class Gen:
                     if out_vat - in_vat > 0:
                         self.payment_out(ib, m + timedelta(days=24), "SUP-budget", out_vat - in_vat, "Налоги")
             # дивиденды участникам — раз в квартал (финансовая деятельность)
+            # (с отделами HR и маркетинга в штате ФОТ вырос — дивиденды участники уменьшили)
             if m.month in (3, 6, 9, 12):
-                self.payment_out("airl", m + timedelta(days=20), "SUP-owner", 18_000_000, "Дивиденды")
-                self.payment_out("airl_dev", m + timedelta(days=20), "SUP-owner", 9_000_000, "Дивиденды")
+                self.payment_out("airl", m + timedelta(days=20), "SUP-owner", 6_000_000, "Дивиденды")
+                self.payment_out("airl_dev", m + timedelta(days=20), "SUP-owner", 3_500_000, "Дивиденды")
             m = add_months(m, 1)
 
         # Лиды без продажи (основная масса воронки) и повторные обращения
@@ -561,6 +590,8 @@ class Gen:
                 self.lead(d, c["phone"], c["name"], company_bin=c["bin"])
         self.rows["leads"] = [l for l in self.rows["leads"] if l["created_at"][:10] < T.isoformat()]
 
+        self.hr_sheets()
+
         # Строки выписки, которых нет в 1С: непонятный плательщик, частичная оплата, возврат
         unknown = [
             (T - timedelta(days=3), 245_000, "Физическое лицо (демо)", "991312345678", "Перевод по номеру телефона"),
@@ -573,6 +604,188 @@ class Gen:
         for k in range(1, 3):
             self.bank_line("airl", "BA-AIRL-1", month_start(T) - timedelta(days=1) if k == 1 else T - timedelta(days=1),
                            -15_000, "Демо Банк Алатау", "", "Комиссия за обслуживание счёта", f"К-{k}")
+
+    # ---------- HR: штат, ЗУП, вакансии, отсутствия ----------
+    def setup_hr(self, salary):
+        """HR и маркетинг в штате, уходы и замены за 18 месяцев. Только hr_rnd."""
+        R = self.hr_rnd
+        salary.update({"HR-менеджер": 550_000, "Руководитель маркетинга": 950_000, "SMM-специалист": 400_000,
+                       "Маркетолог-аналитик": 600_000, "Руководитель HR": 900_000})
+        self.vacancy_plan = []   # (должность, отдел, открыта, закрыта|None, источник, табельный нанятого|None, статус)
+        T = self.today
+        n = len(self.employees)
+
+        def add(dept, pos, hire, fire="", reason=""):
+            nonlocal n
+            n += 1
+            ib = "airl_dev" if dept == "Разработка" else "airl"
+            e = dict(infobase=ib, ref=f"EMP-{n:03d}", tab_no=f"{n:04d}",
+                     fio=f"{R.choice(SURNAMES)} {R.choice(FIRST)}", podrazdelenie=dept, dolzhnost=pos,
+                     hire_date=hire.isoformat(), fire_date=fire, oklad=salary[pos])
+            self.rows["sotrudniki"].append(e)
+            self.employees.append(e)
+            return e
+
+        def hired_via_vacancy(e, source=None):
+            h = date.fromisoformat(e["hire_date"])
+            if h <= self.start:
+                return
+            days = R.randint(16, 58)
+            self.vacancy_plan.append((e["dolzhnost"], e["podrazdelenie"], h - timedelta(days=days), h,
+                                      source or R.choice(SOURCES), e["tab_no"], "closed"))
+
+        # Отделы HR и маркетинга (работали до начала истории)
+        add("HR", "Руководитель HR", self.start - timedelta(days=R.randint(200, 700)))
+        add("Маркетинг", "Руководитель маркетинга", self.start - timedelta(days=R.randint(200, 700)))
+        # Найм в отделах за период
+        hired_via_vacancy(add("HR", "HR-менеджер", self.start + timedelta(days=R.randint(60, 120))), "hh.kz")
+        hired_via_vacancy(add("Маркетинг", "SMM-специалист", self.start + timedelta(days=R.randint(150, 260))), "Telegram-каналы")
+        base = self.employees[:25]
+        # Уже нанятые в периоде (i >= 20 основного списка) — через вакансии
+        for e in base:
+            hired_via_vacancy(e)
+        # Ушедшие из основного списка — замена через вакансию
+        for e in base:
+            if e["fire_date"]:
+                fd = date.fromisoformat(e["fire_date"])
+                opened = fd - timedelta(days=14)          # уведомление за 2 недели
+                hire = opened + timedelta(days=R.randint(25, 60))
+                if hire < T:
+                    r = add(e["podrazdelenie"], e["dolzhnost"], hire)
+                    self.vacancy_plan.append((r["dolzhnost"], r["podrazdelenie"], opened, hire, R.choice(SOURCES), r["tab_no"], "closed"))
+                else:
+                    self.vacancy_plan.append((e["dolzhnost"], e["podrazdelenie"], opened, None, R.choice(SOURCES), None, "open"))
+        # Текучесть: преподаватель и инженер пришли до истории и ушли в периоде; один уход — в прошлом месяце
+        for dept, pos, lo, hi in [("Обучение", "Преподаватель", 120, 240), ("Разработка", "Инженер ИИ", 300, 420),
+                                  ("Продажи", "Менеджер по продажам", (T - self.start).days - 40, (T - self.start).days - 25)]:
+            fd = self.start + timedelta(days=R.randint(lo, hi))
+            e = add(dept, pos, self.start - timedelta(days=R.randint(120, 600)), fd.isoformat())
+            opened = fd - timedelta(days=14)
+            hire = opened + timedelta(days=R.randint(28, 70))
+            if hire < T - timedelta(days=3):
+                r = add(dept, pos, hire)
+                self.vacancy_plan.append((pos, dept, opened, hire, R.choice(SOURCES), r["tab_no"], "closed"))
+            else:
+                self.vacancy_plan.append((pos, dept, opened, None, R.choice(SOURCES), None, "open"))
+        # Рост осенью: куратор под новые потоки и менеджер по продажам — недавно пришли, онбординг идёт
+        for dept, pos, lo, hi in [("Обучение", "Куратор потока", 70, 55), ("Продажи", "Менеджер по продажам", 30, 20)]:
+            hire = T - timedelta(days=R.randint(hi, lo))
+            r = add(dept, pos, hire)
+            self.vacancy_plan.append((pos, dept, hire - timedelta(days=R.randint(24, 48)), hire, R.choice(SOURCES), r["tab_no"], "closed"))
+        # Новые позиции: открыты сейчас (одна — давно, без откликов), одна отменена
+        self.vacancy_plan.append(("Маркетолог-аналитик", "Маркетинг", T - timedelta(days=R.randint(50, 64)), None, "hh.kz", None, "open"))
+        self.vacancy_plan.append(("Куратор потока", "Обучение", T - timedelta(days=R.randint(8, 15)), None, "Рекомендация", None, "open"))
+        self.vacancy_plan.append(("Инженер ИИ", "Разработка", T - timedelta(days=R.randint(20, 30)), None, "LinkedIn", None, "open"))
+        self.vacancy_plan.append(("Бухгалтер", "Финансы", self.start + timedelta(days=200), self.start + timedelta(days=245), "hh.kz", None, "cancelled"))
+
+    def payroll_month(self, ib, m, me, final):
+        """Начисления ЗУП за месяц по сотрудникам юрлица (оклад + налоги работодателя 11,5 %).
+        Возвращает сумму для проводки в 1С:Бухгалтерии."""
+        total = Decimal(0)
+        for e in self.employees:
+            if e["infobase"] != ib:
+                continue
+            h = date.fromisoformat(e["hire_date"])
+            fd = date.fromisoformat(e["fire_date"]) if e["fire_date"] else None
+            if not (h <= me and (fd is None or fd >= m)):
+                continue
+            acc = money(e["oklad"])
+            tax = money(Decimal(e["oklad"]) * Decimal("0.115"))
+            self.rows["zup_nachisleniya"].append(dict(
+                infobase=ib, tab_no=e["tab_no"], month=m.isoformat(), podrazdelenie=e["podrazdelenie"],
+                nachisleno=acc, nalogi_rabotodatelya=tax, status="final" if final else "plan"))
+            total += acc + tax
+        return total
+
+    def hr_sheets(self):
+        """Таблица вакансий HR и отсутствия ЗУП (отпуска, больничные) — после всего штата."""
+        R = self.hr_rnd
+        T = self.today
+        for k, (pos, dept, opened, closed, source, tab, status) in enumerate(sorted(self.vacancy_plan, key=lambda v: v[2]), 1):
+            self.rows["vacancies"].append(dict(
+                vacancy_id=f"VAC-{k:03d}", position=pos, department=dept, opened=opened.isoformat(),
+                closed=closed.isoformat() if closed else "", status=status, source=source, hired_tab_no=tab or "",
+                candidates=R.randint(6, 40) if status != "cancelled" else R.randint(2, 6)))
+        n = 0
+        for e in self.employees:
+            h = max(date.fromisoformat(e["hire_date"]), self.start)
+            fd = date.fromisoformat(e["fire_date"]) if e["fire_date"] else T - timedelta(days=1)
+            m = month_start(h)
+            while m <= fd:
+                last = min(month_end(m), fd)
+                # отпуск: летом и в декабре чаще; больничный — 1–2 раза в год
+                p_vac = 0.32 if m.month in (6, 7, 8) else 0.18 if m.month == 12 else 0.07
+                for kind, p, lo, hi in [("Отпуск", p_vac, 5, 14), ("Больничный", 0.09, 2, 7)]:
+                    if R.random() < p and (last - m).days >= 3:
+                        d0 = m + timedelta(days=R.randint(0, max(0, (last - m).days - 2)))
+                        d1 = min(d0 + timedelta(days=R.randint(lo, hi) - 1), last)
+                        if d0 < h or d0 >= T:
+                            continue
+                        n += 1
+                        self.rows["zup_otsutstviya"].append(dict(
+                            infobase=e["infobase"], ref=f"OTS-{n:05d}", tab_no=e["tab_no"], kind=kind,
+                            date_from=d0.isoformat(), date_to=d1.isoformat()))
+                m = add_months(m, 1)
+
+    # ---------- маркетинг: кампании и расход рекламных кабинетов ----------
+    def campaign_for(self, ch, d):
+        """utm_campaign заявки: кампании канала в месяце заявки (только mkt_rnd)."""
+        key = (ch, d.strftime("%Y-%m"))
+        if key not in self.campaigns:
+            ym = d.strftime("%y%m")
+            names = {"instagram": [f"ig_vibeops_{ym}", f"ig_corp_ai_{ym}"], "site": [f"google_search_{ym}"],
+                     "telegram": [f"tg_channels_{ym}"], "meta_form": [f"meta_leadform_{ym}"],
+                     "event": [f"event_meetup_{ym}"], "referral": ["referral_program"]}[ch]
+            self.campaigns[key] = names
+        return self.mkt_rnd.choice(self.campaigns[key])
+
+    def ad_spend_month(self, m, total):
+        """Расход месяца (= проводки «Реклама» в 1С за закрытый месяц) по каналам, кампаниям и дням."""
+        R = self.mkt_rnd
+        T = self.today
+        shares = dict(MKT_SHARES)
+        if R.random() < 0.4:   # мероприятий в этом месяце не было
+            shares.pop("event")
+        w = {c: s * R.uniform(0.85, 1.15) for c, s in shares.items()}
+        sw = sum(w.values())
+        chans = list(w)
+        alloc, left = {}, total
+        for c in chans[:-1]:
+            alloc[c] = money(total * Decimal(w[c] / sw))
+            left -= alloc[c]
+        alloc[chans[-1]] = left
+        last = month_end(m)
+        days = (last - m).days + 1
+        for c in chans:
+            self.campaign_for(c, m)   # список кампаний канала в месяце
+            names = self.campaigns[(c, m.strftime("%Y-%m"))]
+            per = {nm: money(alloc[c] / len(names)) for nm in names}
+            per[names[-1]] = alloc[c] - sum(per[x] for x in names[:-1])
+            for nm in names:
+                if nm not in self.campaign_seen:
+                    self.campaign_seen.add(nm)
+                    self.rows["ad_campaigns"].append(dict(
+                        utm_campaign=nm, channel=c, cabinet=CABINET[c], title=campaign_title(nm, c),
+                        start_date=m.isoformat(), end_date=last.isoformat() if nm != "referral_program" else ""))
+                amt = per[nm]
+                if c == "event":   # мероприятие — один день оплаты
+                    ev = m + timedelta(days=R.randint(8, 20))
+                    if ev < T:
+                        self.rows["ad_spend"].append(dict(date=ev.isoformat(), cabinet=CABINET[c], channel=c,
+                                                          utm_campaign=nm, spend=amt, impressions=0, clicks=0))
+                    continue
+                acc = Decimal(0)
+                for i in range(days):
+                    d = m + timedelta(days=i)
+                    v = amt - acc if i == days - 1 else money(amt / days * Decimal(R.uniform(0.7, 1.3)))
+                    if i < days - 1 and acc + v > amt:
+                        v = max(Decimal(0), amt - acc)
+                    acc += v
+                    if d >= T or v <= 0:
+                        continue
+                    imp = int(float(v) / R.uniform(0.9, 1.6)) if c != "referral" else 0
+                    self.rows["ad_spend"].append(dict(date=d.isoformat(), cabinet=CABINET[c], channel=c, utm_campaign=nm,
+                                                      spend=v, impressions=imp, clicks=int(imp * R.uniform(0.008, 0.025))))
 
     def write(self, out):
         os.makedirs(out, exist_ok=True)

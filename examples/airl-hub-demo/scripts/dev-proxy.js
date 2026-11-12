@@ -9,7 +9,7 @@ const path = require('node:path');
 const ROOT = path.resolve(__dirname, '..');
 const PORT = Number(process.env.PROXY_PORT || 8080);
 const reg = JSON.parse(fs.readFileSync(path.join(ROOT, 'hub', 'services.json'), 'utf8')).services;
-const LOCAL = { hub: '127.0.0.1:3000', finance: '127.0.0.1:3001', sales: '127.0.0.1:3002', edu: '127.0.0.1:3003' };
+const LOCAL = { hub: '127.0.0.1:3000', finance: '127.0.0.1:3001', sales: '127.0.0.1:3002', edu: '127.0.0.1:3003', hr: '127.0.0.1:3004', marketing: '127.0.0.1:3005' };
 const routes = reg.filter((s) => s.status !== 'disabled')
   .map((s) => ({ prefix: s.base_path, target: process.env[`UPSTREAM_${s.id.toUpperCase()}`] || LOCAL[s.id] }));
 const hub = process.env.UPSTREAM_HUB || LOCAL.hub;

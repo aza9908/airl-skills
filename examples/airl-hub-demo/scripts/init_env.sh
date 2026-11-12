@@ -10,7 +10,7 @@ umask 077
   echo "ADMIN_DB_PASSWORD=$(gen)"
   echo "DB_NAME=airl_demo_hub"
   echo "DEMO_PASSWORD=$(gen | head -c 16)"
-  for v in LOADER FIN SALES EDU HUB AI; do echo "${v}_DB_PASSWORD=$(gen)"; done
+  for v in LOADER FIN SALES EDU HR MKT HUB AI; do echo "${v}_DB_PASSWORD=$(gen)"; done
   echo "AIRL_ISSUER=https://hub.airl.kz"
   echo "AIRL_AUDIENCE=airl-hub"
   echo "PROXY_PORT=8080"

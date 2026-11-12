@@ -13,6 +13,10 @@ const USERS = [
   ['staff_sales', 'Менеджер по продажам (демо)', 'staff_sales', 'sales'],
   ['head_edu', 'Руководитель обучения (демо)', 'head_edu', 'edu'],
   ['staff_edu', 'Куратор потока (демо)', 'staff_edu', 'edu'],
+  ['head_hr', 'Руководитель HR (демо)', 'head_hr', 'hr'],
+  ['staff_hr', 'HR-менеджер (демо)', 'staff_hr', 'hr'],
+  ['head_marketing', 'Руководитель маркетинга (демо)', 'head_marketing', 'marketing'],
+  ['staff_marketing', 'Маркетолог (демо)', 'staff_marketing', 'marketing'],
 ];
 
 function hash(password) {

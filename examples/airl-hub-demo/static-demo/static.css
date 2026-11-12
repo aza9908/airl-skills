@@ -1,0 +1,6 @@
+/* Плашка статической демо-версии (над шапкой хаба). */
+.demo-banner {
+  margin: 10px auto 0; max-width: 1400px; padding: 8px 16px; border-radius: 14px;
+  background: #16161a; color: #f4f4fa; font: 13px/1.4 var(--airl-font-mono, monospace); text-align: center;
+}
+@media (max-width: 640px) { .demo-banner { margin: 8px 12px 0; font-size: 12px; } }

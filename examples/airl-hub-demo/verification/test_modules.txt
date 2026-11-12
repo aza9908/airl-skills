@@ -2,4 +2,5 @@
 ✔ receivables: m_receivables_overdue=1 m_receivables_overdue_share=1 v_rcv_actions=6 v_rcv_aging=13 v_rcv_by_manager=5 v_rcv_data_quality=9 v_rcv_docs=25 v_rcv_promises=3 
 ✔ bank-reconciliation: m_bank_auto_match_rate=3 m_bank_unmatched_count=1 v_bank_export_1c=39 v_bank_lines=45 v_bank_matches=48 v_bank_open_items=50 v_bank_rule_stats=7 v_bank_suggestions=5 v_bank_summary=4 v_bank_unmatched=7 
 ✔ plan-fact: m_plan_completion=16 v_pf_current=18 v_pf_facts_month=448 v_pf_history=64 v_pf_plan_fact=90 v_pf_plans=91 v_pf_signals=2 
-✔ все вместе: 4 модулей в одной схеме, 8 показателей читаются из другой схемы
+✔ onboarding: m_ack_coverage=1 m_onboarding_on_time_rate=3 v_onb_ack_status=38 v_onb_attempts=2 v_onb_documents=4 v_onb_matrix=10 v_onb_people=14 v_onb_progress=4 v_onb_tasks=24 
+✔ все вместе: 5 модулей в одной схеме, 10 показателей читаются из другой схемы, у всех функций свой search_path

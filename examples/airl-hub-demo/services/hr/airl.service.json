@@ -1,0 +1,31 @@
+{
+  "$schema": "airl.service/v1",
+  "id": "hr",
+  "title": "HR",
+  "department": "hr",
+  "map_version": "1.1",
+  "spec_version": "1.0",
+  "version": "1.0.0",
+  "owner": "Руководитель HR (демо)",
+  "base_path": "/hr",
+  "roles": {
+    "view": ["ceo", "head_hr", "staff_hr"],
+    "edit": ["head_hr", "staff_hr"],
+    "summary": ["ceo", "head_hr"]
+  },
+  "data": {
+    "reads": ["metrics.m_headcount", "metrics.m_turnover_rate", "metrics.m_time_to_hire", "metrics.m_open_vacancies",
+              "metrics.m_payroll_fund", "metrics.kpi_period", "metrics.series", "metrics.hr_moves", "metrics.vacancies",
+              "metrics.payroll_by_department", "metrics.absence_by_department", "mart_hr.src_onb_employees"],
+    "reads_shared": [],
+    "writes": ["mart_hr"]
+  },
+  "modules": ["onboarding"],
+  "public_paths": [],
+  "hub": {
+    "health": "/hr/healthz",
+    "summary": "/hr/api/hub/summary",
+    "metrics": ["headcount", "turnover_rate", "open_vacancies", "onboarding_on_time_rate"]
+  },
+  "pii": ["mart_hr.src_onb_employees.full_name (ФИО сотрудника: экраны — «Имя Ф.», для ролей не из HR — с маской)"]
+}

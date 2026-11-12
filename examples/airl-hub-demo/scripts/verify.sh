@@ -21,6 +21,7 @@ PY
 ADMIN_DB_URL=$(url_for "$DB_NAME")
 export FIN_DB_URL=$(url_for "$DB_NAME" svc_finance "$FIN_DB_PASSWORD") SALES_DB_URL=$(url_for "$DB_NAME" svc_sales "$SALES_DB_PASSWORD") \
        EDU_DB_URL=$(url_for "$DB_NAME" svc_edu "$EDU_DB_PASSWORD") HUB_DB_URL=$(url_for "$DB_NAME" svc_hub "$HUB_DB_PASSWORD") \
+       HR_DB_URL=$(url_for "$DB_NAME" svc_hr "$HR_DB_PASSWORD") MKT_DB_URL=$(url_for "$DB_NAME" svc_marketing "$MKT_DB_PASSWORD") \
        AI_DB_URL=$(url_for "$DB_NAME" ai_reader "$AI_DB_PASSWORD")
 rc=0
 
@@ -29,7 +30,7 @@ AIRL_HUB_TOKEN=$(curl -s -i -H 'Content-Type: application/json' -d "{\"login\":\
   | sed -n 's/^[Ss]et-[Cc]ookie: airl_session=\([^;]*\).*/\1/p')
 export AIRL_HUB_TOKEN
 : > $OUT/check_service.txt
-for s in finance sales edu; do
+for s in finance sales marketing edu hr; do
   python3 "$SKILLS/airl-hub/scripts/check_service.py" --service services/$s/airl.service.json --map COMPANY_MAP.md \
     --registry hub/services.json --url "$URL" >> $OUT/check_service.txt 2>&1
   code=$?; echo "  $s: код выхода $code"; echo "exit=$code" >> $OUT/check_service.txt; [ $code -eq 0 ] || rc=1
@@ -37,7 +38,7 @@ done
 
 echo "== 2. Модули на чистой тестовой базе: test_modules.sh (отдельная база airl_demo_modtest)"
 psql "$ADMIN_DATABASE_URL" -qXc "DROP DATABASE IF EXISTS airl_demo_modtest" -c "CREATE DATABASE airl_demo_modtest" >/dev/null 2>&1
-DATABASE_URL=$(url_for airl_demo_modtest) bash "$SKILLS/airl-modules/scripts/test_modules.sh" pnl-cashflow receivables bank-reconciliation plan-fact > $OUT/test_modules.txt 2>&1
+DATABASE_URL=$(url_for airl_demo_modtest) bash "$SKILLS/airl-modules/scripts/test_modules.sh" pnl-cashflow receivables bank-reconciliation plan-fact onboarding > $OUT/test_modules.txt 2>&1
 code=$?; echo "  код выхода $code"; [ $code -eq 0 ] || rc=1
 psql "$ADMIN_DATABASE_URL" -qXc "DROP DATABASE IF EXISTS airl_demo_modtest" >/dev/null
 

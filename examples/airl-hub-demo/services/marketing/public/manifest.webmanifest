@@ -1,0 +1,16 @@
+{
+  "name": "Маркетинг — Хаб AIRL (демо)",
+  "short_name": "Маркетинг",
+  "id": "/marketing/",
+  "start_url": "/marketing/",
+  "scope": "/marketing/",
+  "display": "standalone",
+  "background_color": "#e8e8f2",
+  "theme_color": "#16161a",
+  "lang": "ru",
+  "icons": [
+    { "src": "/marketing/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/marketing/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/marketing/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

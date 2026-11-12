@@ -90,7 +90,7 @@ $$;
 -- Светофор по порогам: для «больше — лучше» (higher_is_better = true)
 -- и «меньше — лучше» (false).
 CREATE OR REPLACE FUNCTION airl_traffic(p_value numeric, p_warn numeric, p_bad numeric, p_higher_is_better boolean)
-RETURNS text LANGUAGE sql IMMUTABLE AS $$
+RETURNS text LANGUAGE sql IMMUTABLE SET search_path FROM CURRENT AS $$
     SELECT CASE
         WHEN p_value IS NULL THEN 'warning'
         WHEN p_higher_is_better AND p_value <= p_bad  THEN 'danger'

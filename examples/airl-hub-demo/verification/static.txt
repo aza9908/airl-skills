@@ -1,0 +1,64 @@
+✔ компьютер /
+✔ компьютер /#income
+✔ компьютер /#marketing
+✔ компьютер /#hr
+✔ компьютер /#ops
+✔ компьютер /finance/#/overview
+✔ компьютер /finance/#/pnl
+✔ компьютер /finance/#/cash
+✔ компьютер /finance/#/debtors
+✔ компьютер /finance/#/client/CL-b80eb857122e
+✔ компьютер /finance/#/bank
+✔ компьютер /sales/#/overview
+✔ компьютер /sales/#/plan
+✔ компьютер /sales/#/leads
+✔ компьютер /marketing/#/overview
+✔ компьютер /marketing/#/campaigns
+✔ компьютер /marketing/#/budget
+✔ компьютер /edu/#/overview
+✔ компьютер /edu/#/cohorts
+✔ компьютер /edu/#/cohort/VO-2612-17
+✔ компьютер /hr/#/overview
+✔ компьютер /hr/#/vacancies
+✔ компьютер /hr/#/onboarding
+✔ компьютер /hr/#/person/13
+✔ компьютер /hr/#/payroll
+✔ экран руководителя, период «day»: разделы на месте, ошибок нет
+✔ экран руководителя, период «week»: разделы на месте, ошибок нет
+✔ экран руководителя, период «quarter»: разделы на месте, ошибок нет
+✔ экран руководителя, период «month»: разделы на месте, ошибок нет
+✔ плитки всех 5 отделов: finance, sales, marketing, edu, hr
+✔ переключатель отделов: /, /finance/, /sales/, /marketing/, /edu/, /hr/
+✔ переключатель → /finance/
+✔ переключатель → /sales/
+✔ переключатель → /marketing/
+✔ переключатель → /edu/
+✔ переключатель → /hr/
+✔ «Выйти» → экран руководителя (страницы входа нет)
+✔ телефон 390 /
+✔ телефон 390 /#income
+✔ телефон 390 /#marketing
+✔ телефон 390 /#hr
+✔ телефон 390 /#ops
+✔ телефон 390 /finance/#/overview
+✔ телефон 390 /finance/#/pnl
+✔ телефон 390 /finance/#/cash
+✔ телефон 390 /finance/#/debtors
+✔ телефон 390 /finance/#/client/CL-b80eb857122e
+✔ телефон 390 /finance/#/bank
+✔ телефон 390 /sales/#/overview
+✔ телефон 390 /sales/#/plan
+✔ телефон 390 /sales/#/leads
+✔ телефон 390 /marketing/#/overview
+✔ телефон 390 /marketing/#/campaigns
+✔ телефон 390 /marketing/#/budget
+✔ телефон 390 /edu/#/overview
+✔ телефон 390 /edu/#/cohorts
+✔ телефон 390 /edu/#/cohort/VO-2612-17
+✔ телефон 390 /hr/#/overview
+✔ телефон 390 /hr/#/vacancies
+✔ телефон 390 /hr/#/onboarding
+✔ телефон 390 /hr/#/person/13
+✔ телефон 390 /hr/#/payroll
+
+Итог: статическая версия: все проверки зелёные

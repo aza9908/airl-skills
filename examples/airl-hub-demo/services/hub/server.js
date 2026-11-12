@@ -10,7 +10,7 @@ const auth = require('../shared/lib/auth');
 const { makePool, q } = require('../shared/lib/db');
 
 const VERSION = process.env.APP_VERSION || 'dev';
-const MAP_VERSION = '1.0';
+const MAP_VERSION = '1.1';
 const PORT = Number(process.env.PORT || 3000);
 const ROOT = path.resolve(__dirname, '..', '..');
 const PUB = path.join(__dirname, 'public');
@@ -47,12 +47,13 @@ function journal(login, event, detail = null) {
 }
 
 // ---------- ограничение частоты входа ----------
-const attempts = new Map(); // ip → [время]
-function rateLimited(ip) {
-  const now = Date.now(); const arr = (attempts.get(ip) || []).filter((t) => now - t < 10 * 60 * 1000);
-  arr.push(now); attempts.set(ip, arr);
-  return arr.length > 20;
-}
+// Считаем неудачные попытки с одного адреса: 20 за 10 минут → 429. Удачный вход не расходует лимит
+// (иначе отдел из 20 человек за одним NAT упирался бы в лимит утром); подбор пароля к одному
+// логину дополнительно останавливает блокировка после 5 ошибок (hub.users.locked_until).
+const failures = new Map(); // ip → [время неудачи]
+const recent = (ip) => (failures.get(ip) || []).filter((t) => Date.now() - t < 10 * 60 * 1000);
+const rateLimited = (ip) => recent(ip).length >= 20;
+function failed(ip) { const arr = recent(ip); arr.push(Date.now()); failures.set(ip, arr); }
 
 function verifyPassword(password, stored) {
   const [scheme, salt, hash] = String(stored).split('$');
@@ -118,13 +119,14 @@ const app = createApp({
       if (rateLimited(ip)) throw new HttpError(429, 'Слишком много попыток входа. Подождите 10 минут');
       const login = String(ctx.body.login || '').trim().toLowerCase();
       const password = String(ctx.body.password || '');
-      if (!/^[a-z][a-z0-9_]{2,40}$/.test(login) || !password || password.length > 200) throw new HttpError(401, 'Неверный логин или пароль');
+      if (!/^[a-z][a-z0-9_]{2,40}$/.test(login) || !password || password.length > 200) { failed(ip); throw new HttpError(401, 'Неверный логин или пароль'); }
       const [u] = await q(pool, 'SELECT login, display_name, role, department, password_hash, disabled, failed_logins, locked_until FROM hub.users WHERE login = $1', [login]);
-      if (!u || u.disabled) { journal(login, 'login_failed', 'нет пользователя'); throw new HttpError(401, 'Неверный логин или пароль'); }
+      if (!u || u.disabled) { failed(ip); journal(login, 'login_failed', 'нет пользователя'); throw new HttpError(401, 'Неверный логин или пароль'); }
       if (u.locked_until && new Date(u.locked_until) > new Date()) throw new HttpError(429, 'Вход временно заблокирован после неудачных попыток. Попробуйте через 15 минут');
       if (!verifyPassword(password, u.password_hash)) {
         await pool.query(`UPDATE hub.users SET failed_logins = failed_logins + 1,
           locked_until = CASE WHEN failed_logins + 1 >= 5 THEN now() + interval '15 minutes' END WHERE login = $1`, [login]);
+        failed(ip);
         journal(login, 'login_failed', 'пароль');
         throw new HttpError(401, 'Неверный логин или пароль');
       }
@@ -171,7 +173,7 @@ const app = createApp({
       const rows = await q(pool, 'SELECT * FROM metrics.kpi_period($1)', [grain]);
       const kpis = rows.filter((r) => canSeeDept(u, r.department) || (r.department === 'ceo' && u.role === 'ceo'));
       const [asOf] = await q(pool, 'SELECT metrics.as_of() AS as_of');
-      const depts = u.role === 'ceo' ? ['finance', 'sales', 'edu'] : [deptOf(u.role)];
+      const depts = u.role === 'ceo' ? ['finance', 'sales', 'marketing', 'edu', 'hr'] : [deptOf(u.role)];
       return {
         as_of: asOf.as_of, grain, period: rows[0]?.period, compare: rows[0] ? `${rows[0].prev_from} – ${rows[0].prev_to}` : null,
         departments: depts, kpis,
@@ -210,7 +212,34 @@ const app = createApp({
       const u = await requireOverview(ctx);
       if (!canSeeDept(u, 'sales')) throw new HttpError(403, 'Только для руководителя и продаж');
       const [b] = await q(pool, 'SELECT * FROM metrics.period_bounds($1, metrics.as_of())', [grainOf(ctx)]);
-      return { period: b.label, channels: await q(pool, 'SELECT * FROM metrics.lead_funnel($1, $2)', [b.cur_from, b.cur_to]) };
+      return { period: b.label, channels: await q(pool, 'SELECT f.*, metrics.channel_title(f.channel) AS channel_title FROM metrics.lead_funnel($1, $2) f', [b.cur_from, b.cur_to]) };
+    }],
+
+    // HR: найм и увольнения по периодам, открытые вакансии, ФОТ по отделам за период (малые отделы объединены).
+    ['GET', '/hub/api/hr', async (ctx) => {
+      const u = await requireOverview(ctx);
+      if (!canSeeDept(u, 'hr')) throw new HttpError(403, 'Только для руководителя и HR');
+      const grain = grainOf(ctx);
+      const n = { day: 30, week: 13, month: 18, quarter: 6 }[grain];
+      const [b] = await q(pool, 'SELECT * FROM metrics.period_bounds($1, metrics.as_of())', [grain]);
+      return {
+        period: b.label, grain,
+        moves: await q(pool, 'SELECT label, hires, terminations FROM metrics.hr_moves($1, $2)', [grain, n]),
+        vacancies: await q(pool, "SELECT job_title, department, opened, days_open, source FROM metrics.vacancies() WHERE status = 'open' ORDER BY days_open DESC"),
+        payroll: await q(pool, 'SELECT * FROM metrics.payroll_by_department($1, $2)', [b.cur_from, b.cur_to]),
+      };
+    }],
+
+    // Маркетинг: каналы и кампании за период (расход, заявки, CPL, CAC, ROMI — формулы metrics).
+    ['GET', '/hub/api/marketing', async (ctx) => {
+      const u = await requireOverview(ctx);
+      if (!canSeeDept(u, 'marketing')) throw new HttpError(403, 'Только для руководителя и маркетинга');
+      const [b] = await q(pool, 'SELECT * FROM metrics.period_bounds($1, metrics.as_of())', [grainOf(ctx)]);
+      return {
+        period: b.label,
+        channels: await q(pool, 'SELECT * FROM metrics.marketing_channels($1, $2)', [b.cur_from, b.cur_to]),
+        campaigns: await q(pool, 'SELECT campaign_id, title, channel_title, spend, leads, won, cpl, romi, no_leads FROM metrics.marketing_campaigns($1, $2) LIMIT 8', [b.cur_from, b.cur_to]),
+      };
     }],
 
     ['GET', '/hub/api/forecast', async (ctx) => {

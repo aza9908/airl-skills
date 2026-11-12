@@ -1,10 +1,13 @@
                           check_name                           | periods | mismatches | max_diff 
 ---------------------------------------------------------------+---------+------------+----------
+ ad_spend: кабинеты = 1С «Реклама» (закрытые месяцы)           |      17 |          0 |     0.00
  cash_balance: m_pnl_cash_balance = metrics.m_cash_balance     |      18 |          0 |     0.00
  gross_margin:all: m_pnl_gross_margin = metrics.m_gross_margin |      18 |          0 |      0.0
+ headcount: metrics = начисления ЗУП текущего месяца           |       1 |          0 |        0
  net_profit:all: m_pnl_net_profit = metrics.m_net_profit       |      17 |          0 |     0.00
+ payroll_fund: ЗУП по дням = 1С «ФОТ» (закрытые месяцы)        |      17 |          0 |     0.00
  plan-fact: факт выручки месяца = metrics.m_revenue            |       5 |          0 |     0.00
  receivables_overdue: модуль = metrics на вчера                |       1 |          0 |     0.00
  revenue: модуль ОПиУ (компания) = metrics.m_revenue           |      18 |          0 |     0.00
-(6 rows)
+(9 rows)
 

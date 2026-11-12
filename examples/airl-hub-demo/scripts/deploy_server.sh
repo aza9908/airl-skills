@@ -39,6 +39,10 @@ set_env() { # set_env KEY VALUE — заменить или добавить с�
 set_env HUB_SITE "$DOMAIN"
 set_env PROXY_PORT 80
 set_env COOKIE_SECURE 1
+# Пароли пользователей базы новых отделов (HR, маркетинг) для .env, созданного до их появления
+for v in HR MKT; do
+  grep -q "^${v}_DB_PASSWORD=." .env || echo "${v}_DB_PASSWORD=$(python3 -c 'import secrets; print(secrets.token_urlsafe(24))' 2>/dev/null || head -c 32 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 32)" >> .env
+done
 chmod 600 .env
 
 echo "== 4. Запуск"
@@ -48,7 +52,7 @@ echo "== 5. Проверка"
 for _ in $(seq 1 60); do
   if curl -fsS -m 5 "https://$DOMAIN/healthz" >/dev/null 2>&1; then
     echo "Готово: https://$DOMAIN/login"
-    echo "Логины: ceo, head_finance, head_sales, head_edu, staff_sales. Пароль: строка DEMO_PASSWORD в $APP/.env"
+    echo "Логины: ceo, head_finance, head_sales, head_marketing, head_edu, head_hr, staff_sales. Пароль: строка DEMO_PASSWORD в $APP/.env"
     exit 0
   fi
   sleep 5
