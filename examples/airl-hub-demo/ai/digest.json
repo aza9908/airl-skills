@@ -1,0 +1,35 @@
+{
+  "company": "AIRL (демо)",
+  "language": "русский",
+  "period": "месяц с 1-го по вчера",
+  "max_lines": 12,
+  "model": "claude-opus-5-5",
+  "effort": "medium",
+  "titles": {
+    "revenue": "Выручка",
+    "gross_margin:all": "Валовая маржа",
+    "net_profit:all": "Чистая прибыль",
+    "cash_balance": "Остаток денег",
+    "receivables_overdue": "Просроченная дебиторка",
+    "lead": "Заявки",
+    "conversion_lead_to_deal": "Конверсия заявки в оплату",
+    "enrollments": "Записи на курс",
+    "cohort_fill_rate": "Заполненность потоков",
+    "bank_unmatched_count": "Неразнесённые строки выписки",
+    "plan_completion:revenue": "Выполнение плана по выручке",
+    "edu_at_risk": "Слушатели под риском отсева"
+  },
+  "sources": [
+    {"name": "Финансы", "sql": "SELECT metric_id, period, value, unit, status FROM metrics.m_revenue ORDER BY period DESC LIMIT 2"},
+    {"name": "Финансы", "sql": "SELECT metric_id, period, value, unit, status FROM metrics.m_gross_margin WHERE metric_id = 'gross_margin:all' ORDER BY period DESC LIMIT 2"},
+    {"name": "Финансы", "sql": "SELECT metric_id, period, value, unit, status FROM metrics.m_cash_balance ORDER BY period DESC LIMIT 2"},
+    {"name": "Финансы", "sql": "SELECT metric_id, period, value, unit, status FROM metrics.m_receivables_overdue ORDER BY period DESC LIMIT 2"},
+    {"name": "Финансы", "sql": "SELECT metric_id, period, value, unit, status FROM mart_finance.m_bank_unmatched_count"},
+    {"name": "Продажи", "sql": "SELECT metric_id, period, value, unit, status FROM metrics.m_lead ORDER BY period DESC LIMIT 2"},
+    {"name": "Продажи", "sql": "SELECT metric_id, period, value, unit, status FROM metrics.m_conversion_lead_to_deal ORDER BY period DESC LIMIT 2"},
+    {"name": "Продажи", "sql": "SELECT metric_id, period, value, unit, status FROM mart_sales.m_plan_completion WHERE metric_id = 'plan_completion:revenue' ORDER BY period DESC LIMIT 2"},
+    {"name": "Обучение", "sql": "SELECT metric_id, period, value, unit, status FROM metrics.m_enrollments ORDER BY period DESC LIMIT 2"},
+    {"name": "Обучение", "sql": "SELECT metric_id, period, value, unit, status FROM metrics.m_cohort_fill_rate ORDER BY period DESC LIMIT 2"},
+    {"name": "Обучение", "sql": "SELECT metric_id, period, value, unit, status FROM mart_edu.m_edu_at_risk"}
+  ]
+}

@@ -1,0 +1,12 @@
+2026-11-12 11:52:47 UTC
+1) выкладка finance 1.0.1: FINANCE_TAG=1.0.1 docker compose up -d --no-deps finance
+ Container airlcompose-finance-1 Started 
+   /finance/healthz → {"status":"ok","service":"finance","version":"1.0.1","map_version":"1.0"}
+2) откат: FINANCE_TAG=1.0.0 docker compose up -d --no-deps finance
+ Container airlcompose-finance-1 Started 
+   /finance/healthz → {"status":"ok","service":"finance","version":"1.0.0","map_version":"1.0"}
+3) соседние сервисы не перезапускались:
+db Up 4 minutes (healthy)
+edu Up About a minute (healthy)
+hub Up About a minute (healthy)
+sales Up About a minute (healthy)

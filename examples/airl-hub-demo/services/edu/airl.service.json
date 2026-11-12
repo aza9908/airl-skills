@@ -1,0 +1,31 @@
+{
+  "$schema": "airl.service/v1",
+  "id": "edu",
+  "title": "Обучение",
+  "department": "edu",
+  "map_version": "1.0",
+  "spec_version": "1.0",
+  "version": "1.0.0",
+  "owner": "Руководитель обучения (демо)",
+  "base_path": "/edu",
+  "roles": {
+    "view": ["ceo", "head_edu", "staff_edu"],
+    "edit": ["head_edu", "staff_edu"],
+    "summary": ["ceo", "head_edu"]
+  },
+  "data": {
+    "reads": ["core.cohorts", "core.enrollments", "core.clients(client_id, kind, name)",
+              "metrics.m_enrollments", "metrics.m_cohort_fill_rate", "metrics.m_course_completion_rate",
+              "metrics.kpi_period", "metrics.series", "metrics.cohort_fill_rate_detail"],
+    "reads_shared": [],
+    "writes": ["mart_edu"]
+  },
+  "modules": [],
+  "public_paths": [],
+  "hub": {
+    "health": "/edu/healthz",
+    "summary": "/edu/api/hub/summary",
+    "metrics": ["enrollments", "cohort_fill_rate", "course_completion_rate", "edu_at_risk"]
+  },
+  "pii": ["core.clients.name (слушатели — физлица)", "mart_edu.edu_flags.comment"]
+}
