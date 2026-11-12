@@ -32,6 +32,7 @@ services:
 
   setup:                                # один раз: хранилище, модули, синтетика, пользователи, сводка
     build: { context: ../.., dockerfile: examples/airl-hub-demo/Dockerfile.setup }
+    image: airl-hub-demo-setup:1.0.0
     env_file: .env
     environment:
       ADMIN_DATABASE_URL: postgresql://airl_admin:${ADMIN_DB_PASSWORD}@db:5432/postgres
@@ -42,8 +43,8 @@ services:
 
   hub:
     <<: *svc
-    build: { context: ., args: { SERVICE: hub, APP_VERSION: "1.0.0" } }
-    image: airl-hub-demo-hub:1.0.0
+    build: { context: ., args: { SERVICE: hub, APP_VERSION: "${HUB_TAG:-1.0.0}" } }
+    image: airl-hub-demo-hub:${HUB_TAG:-1.0.0}
     environment:
       PORT: "3000"
       DATABASE_URL: postgresql://svc_hub:${HUB_DB_PASSWORD}@db:5432/airl_demo_hub
@@ -54,8 +55,8 @@ services:
 
   finance:
     <<: *svc
-    build: { context: ., args: { SERVICE: finance, APP_VERSION: "1.0.0" } }
-    image: airl-hub-demo-finance:1.0.0
+    build: { context: ., args: { SERVICE: finance, APP_VERSION: "${FINANCE_TAG:-1.0.0}" } }
+    image: airl-hub-demo-finance:${FINANCE_TAG:-1.0.0}
     environment:
       PORT: "3001"
       DATABASE_URL: postgresql://svc_finance:${FIN_DB_PASSWORD}@db:5432/airl_demo_hub
@@ -64,8 +65,8 @@ services:
 
   sales:
     <<: *svc
-    build: { context: ., args: { SERVICE: sales, APP_VERSION: "1.0.0" } }
-    image: airl-hub-demo-sales:1.0.0
+    build: { context: ., args: { SERVICE: sales, APP_VERSION: "${SALES_TAG:-1.0.0}" } }
+    image: airl-hub-demo-sales:${SALES_TAG:-1.0.0}
     environment:
       PORT: "3002"
       DATABASE_URL: postgresql://svc_sales:${SALES_DB_PASSWORD}@db:5432/airl_demo_hub
@@ -74,8 +75,8 @@ services:
 
   edu:
     <<: *svc
-    build: { context: ., args: { SERVICE: edu, APP_VERSION: "1.0.0" } }
-    image: airl-hub-demo-edu:1.0.0
+    build: { context: ., args: { SERVICE: edu, APP_VERSION: "${EDU_TAG:-1.0.0}" } }
+    image: airl-hub-demo-edu:${EDU_TAG:-1.0.0}
     environment:
       PORT: "3003"
       DATABASE_URL: postgresql://svc_edu:${EDU_DB_PASSWORD}@db:5432/airl_demo_hub

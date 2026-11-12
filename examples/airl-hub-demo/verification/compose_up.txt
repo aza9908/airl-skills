@@ -1,0 +1,25 @@
+ Container airlcompose-sales-1 Created 
+ Container airlcompose-finance-1 Created 
+ Container airlcompose-hub-1 Created 
+ Container airlcompose-sales-1 Starting 
+ Container airlcompose-edu-1 Starting 
+ Container airlcompose-finance-1 Starting 
+ Container airlcompose-hub-1 Starting 
+ Container airlcompose-sales-1 Started 
+ Container airlcompose-edu-1 Started 
+ Container airlcompose-finance-1 Started 
+ Container airlcompose-hub-1 Started 
+db Up 2 minutes (healthy)
+edu Up 10 seconds (health: starting)
+finance Up 10 seconds (health: starting)
+hub Up 10 seconds (health: starting)
+sales Up 10 seconds (health: starting)
+3000/healthz -> {"status":"ok","service":"hub","version":"1.0.0","map_version":"1.0"}
+3001/finance/healthz -> {"status":"ok","service":"finance","version":"1.0.0","map_version":"1.0"}
+3002/sales/healthz -> {"status":"ok","service":"sales","version":"1.0.0","map_version":"1.0"}
+3003/edu/healthz -> {"status":"ok","service":"edu","version":"1.0.0","map_version":"1.0"}
+finance summary с токеном ceo: 200
+sales summary с токеном ceo: 200
+edu summary с токеном ceo: 200
+tiles: [('finance', True), ('sales', True), ('edu', True)]
+COMPOSE_DONE
