@@ -242,7 +242,9 @@ const app = createApp({
       const defs = Object.fromEntries((await q(pool, 'SELECT metric_id, title FROM metrics.definitions')).map((d) => [d.metric_id, d.title]));
       for (const t of tiles) for (const m of t.metrics || []) {
         const base = String(m.id).split(':')[0];
-        m.title = (defs[base] || m.title) + (String(m.id).includes(':') && !String(m.id).endsWith(':all') ? ` · ${String(m.id).split(':')[1]}` : '');
+        const DIM = { revenue: 'выручка', lead: 'заявки', enrollments: 'записи' };
+        const dim = String(m.id).split(':')[1];
+        m.title = (defs[base] || m.title) + (dim && dim !== 'all' ? ` · ${DIM[dim] || dim}` : '');
       }
       const data = { generated_at: new Date().toISOString(), tiles };
       tileCache.set(key, { at: Date.now(), data });

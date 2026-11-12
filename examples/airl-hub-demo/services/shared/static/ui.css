@@ -28,6 +28,7 @@ a { color: var(--airl-color-primary-ink); }
   background: #2a2a31; color: var(--airl-color-on-dark); border: 0; border-radius: 999px; padding: 0 14px;
   min-height: 44px; font: inherit; font-size: 14px;
 }
+.topbar select { width: auto; max-width: 240px; }
 .topbar .user { display: flex; align-items: center; gap: 8px; }
 .topbar .user .role { font-family: var(--airl-font-mono); font-size: 12px; opacity: .75; }
 .topbar button.logout {
@@ -176,7 +177,10 @@ dialog::backdrop { background: rgba(22, 22, 26, .45); }
   .grid2, .grid3 { grid-template-columns: 1fr; }
   .topbar { padding-left: 14px; gap: 8px; }
   .topbar .svc { display: none; }
-  .topbar .user .name { display: none; }
+  .topbar .user { display: none; }
+  .topbar select { max-width: 44vw; padding: 0 10px; }
+  .topbar button.logout { padding: 0 14px; }
+  .topbar .logo img { height: 18px; width: auto; }
   .page-head h1 { font-size: 22px; }
   .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
   .kpi { padding: 14px; min-height: 120px; }

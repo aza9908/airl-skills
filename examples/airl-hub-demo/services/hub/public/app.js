@@ -27,7 +27,10 @@
     }));
   }
 
-  const kpiBlock = (kpis) => `<div class="kpis">${kpis.map((k) => kpiCard({ ...k, id: k.metric_id },
+  const ORDER = ['revenue', 'gross_margin', 'net_profit', 'cash_balance', 'receivables_overdue', 'lead', 'conversion_lead_to_deal', 'avg_check',
+    'enrollments', 'cohort_fill_rate', 'course_completion_rate', 'headcount'];
+  const sortK = (a) => a.slice().sort((x, y) => ORDER.indexOf(x.metric_id) - ORDER.indexOf(y.metric_id));
+  const kpiBlock = (kpis) => `<div class="kpis">${sortK(kpis).map((k) => kpiCard({ ...k, id: k.metric_id },
     { lowerIsBetter: LOWER_BETTER.has(k.metric_id), sub: `было ${fmtValue(k.prev_value, k.unit)} · ${DEPT_TITLE[k.department] || ''}` })).join('')}</div>`;
 
   function seriesCard(title, s, unit) {
@@ -56,7 +59,7 @@
   function funnelCard(f) {
     const rows = f.channels.map((c) => `<tr><td data-label="Канал">${esc(c.channel)}</td><td class="n" data-label="Заявки">${c.leads}</td><td class="n" data-label="В работе">${c.open}</td><td class="n" data-label="Отказ">${c.lost}</td><td class="n" data-label="Оплата">${c.won}</td></tr>`).join('');
     const tot = f.channels.reduce((s, c) => ({ leads: s.leads + Number(c.leads), won: s.won + Number(c.won) }), { leads: 0, won: 0 });
-    return `<div class="card" id="funnel"><h2>Заявки по каналам <span class="sub">· ${esc(f.period)} · без дублей (30 дней)</span></h2>
+    return `<div class="card" id="funnel"><h2>Заявки по каналам <span class="sub">· ${esc(f.period)} · без дублей (30 дней) · «Оплата» — заявки этого периода, уже оплаченные</span></h2>
       ${f.channels.length ? `<table class="tbl cards"><thead><tr><th>Канал</th><th class="n">Заявки</th><th class="n">В работе</th><th class="n">Отказ</th><th class="n">Оплата</th></tr></thead><tbody>${rows}</tbody>
       <tfoot><tr class="is-section"><td>Итого</td><td class="n">${tot.leads}</td><td></td><td></td><td class="n">${tot.won}</td></tr></tfoot></table>` : empty('Заявок за период нет')}</div>`;
   }

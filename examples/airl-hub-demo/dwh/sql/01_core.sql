@@ -308,19 +308,19 @@ BEGIN
                x.pipeline, x.utm_source, x.status, NULLIF(x.price, '')::numeric AS price,
                x.responsible_user_id, md5(x.contact_phone) AS contact_key, x.contact_phone,
                NULLIF(x.company_bin, '') AS company_bin, NULLIF(x.closed_at, '')::date AS closed_date,
-               NULLIF(x.loss_reason, '') AS loss_reason
+               NULLIF(x.loss_reason, '') AS loss_reason,
+               lag(x.created_at::timestamptz) OVER (PARTITION BY md5(x.contact_phone) ORDER BY x.created_at::timestamptz, x.id) AS prev_at
         FROM raw_amocrm.leads x
-    )
+    ),
+    cl AS (SELECT DISTINCT ON (phone) phone, client_id FROM core.clients WHERE kind = 'person' AND phone IS NOT NULL ORDER BY phone, client_id)
     INSERT INTO core.leads
     SELECT l.id, l.created_at, l.created_date, l.pipeline, l.utm_source, l.status,
            CASE l.status WHEN 'Успешно реализовано' THEN 'won' WHEN 'Закрыто и не реализовано' THEN 'lost' ELSE 'open' END,
            l.price, l.responsible_user_id,
            COALESCE((SELECT c.client_id FROM core.clients c WHERE c.tax_id = l.company_bin LIMIT 1),
-                    (SELECT c.client_id FROM core.clients c WHERE l.company_bin IS NULL AND c.kind = 'person'
-                       AND c.phone = l.contact_phone LIMIT 1)),
+                    (SELECT cl.client_id FROM cl WHERE l.company_bin IS NULL AND cl.phone = l.contact_phone)),
            l.contact_key,
-           EXISTS (SELECT 1 FROM l p WHERE p.contact_key = l.contact_key AND p.id <> l.id
-                     AND p.created_at < l.created_at AND p.created_at >= l.created_at - interval '30 days'),
+           COALESCE(l.prev_at >= l.created_at - interval '30 days', false),
            l.closed_date, l.loss_reason
     FROM l;
 

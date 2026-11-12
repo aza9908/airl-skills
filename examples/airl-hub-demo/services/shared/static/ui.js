@@ -129,10 +129,13 @@ const AIRL = (() => {
   function registerSW(scope) {
     if (!('serviceWorker' in navigator)) return;
     navigator.serviceWorker.register(scope + 'sw.js', { scope }).then((reg) => {
+      // Плашка — только при обновлении уже установленной версии этого сервиса, не при первой установке
+      // (страницу сервиса может контролировать service worker оболочки хаба со scope «/»).
+      const hadActive = !!reg.active;
       reg.addEventListener('updatefound', () => {
         const nw = reg.installing;
         nw.addEventListener('statechange', () => {
-          if (nw.state === 'installed' && navigator.serviceWorker.controller) {
+          if (nw.state === 'installed' && hadActive) {
             const bar = document.createElement('div');
             bar.className = 'update-bar';
             bar.innerHTML = '<span>Доступна новая версия</span><button type="button">Обновить</button>';

@@ -8,3 +8,4 @@ node_modules/
 .run/
 test-results/
 __pycache__/
+ai/out/

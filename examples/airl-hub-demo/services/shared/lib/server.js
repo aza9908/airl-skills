@@ -108,7 +108,7 @@ function createApp({ name, routes = [], statics = [], spa = null, before = null 
         if (req.method === 'POST' || req.method === 'PUT') ctx.body = await readJson(req);
         const out = await r.handler(ctx);
         if (out === 'handled') return;
-        if (out && out.status) return send(res, out.status, out.body ?? '', out.headers || {});
+        if (out && typeof out.status === 'number') return send(res, out.status, out.body ?? '', out.headers || {});
         return send(res, 200, out ?? {});
       }
       if (req.method === 'GET' || req.method === 'HEAD') {
