@@ -1,0 +1,16 @@
+{
+  "name": "Продажи — Хаб AIRL (демо)",
+  "short_name": "Продажи",
+  "id": "/sales/",
+  "start_url": "/sales/",
+  "scope": "/sales/",
+  "display": "standalone",
+  "background_color": "#e8e8f2",
+  "theme_color": "#16161a",
+  "lang": "ru",
+  "icons": [
+    { "src": "/sales/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/sales/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/sales/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

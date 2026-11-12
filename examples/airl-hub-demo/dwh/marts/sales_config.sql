@@ -43,3 +43,7 @@ FROM ly
 WHERE NOT EXISTS (SELECT 1 FROM pf_plans x
                   WHERE x.metric_id = ly.metric_id AND x.period = ly.month
                     AND x.dimension_type = ly.dimension_type AND x.dimension_value = ly.dimension_value);
+
+-- Сотрудник хаба staff_sales — менеджер amoCRM 9001 (демо).
+INSERT INTO sales_staff (login, manager_id, created_by) VALUES ('staff_sales', '9001', 'setup')
+ON CONFLICT (login) DO NOTHING;

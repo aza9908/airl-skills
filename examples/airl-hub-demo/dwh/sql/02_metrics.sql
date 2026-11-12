@@ -22,8 +22,10 @@ CREATE TABLE IF NOT EXISTS metrics.definitions (
     status_mode      text NOT NULL CHECK (status_mode IN ('abs', 'delta_pct')),
     warn             numeric,                -- abs: граница; delta_pct: падение к прошлому периоду, %
     bad              numeric,
-    owner            text NOT NULL
+    owner            text NOT NULL,
+    source           text NOT NULL DEFAULT 'metrics'  -- metrics | mart_<отдел> (показатель модуля или сервиса)
 );
+ALTER TABLE metrics.definitions ADD COLUMN IF NOT EXISTS source text NOT NULL DEFAULT 'metrics';
 
 INSERT INTO metrics.definitions VALUES
  ('revenue',                 'Выручка',                       'KZT', 'flow',  'finance', true,  'delta_pct', -5,  -15, 'Финансовый директор'),
@@ -41,6 +43,16 @@ INSERT INTO metrics.definitions VALUES
 ON CONFLICT (metric_id) DO UPDATE SET title = EXCLUDED.title, unit = EXCLUDED.unit, kind = EXCLUDED.kind,
     department = EXCLUDED.department, higher_is_better = EXCLUDED.higher_is_better,
     status_mode = EXCLUDED.status_mode, warn = EXCLUDED.warn, bad = EXCLUDED.bad, owner = EXCLUDED.owner;
+
+-- Показатели карты, которые считает модуль или сервис в своей витрине (источник правды —
+-- сервис, раздел 2 карты). Здесь только название и единица для подписей хаба.
+INSERT INTO metrics.definitions (metric_id, title, unit, kind, department, higher_is_better, status_mode, warn, bad, owner, source) VALUES
+ ('plan_completion',           'Выполнение плана',               '%',   'ratio', 'sales',   true,  'abs', NULL, NULL, 'Руководитель продаж',   'mart_sales'),
+ ('receivables_overdue_share', 'Доля просрочки в дебиторке',     '%',   'point', 'finance', false, 'abs', NULL, NULL, 'Финансовый директор',   'mart_finance'),
+ ('bank_unmatched_count',      'Неразнесённые строки выписки',   'шт',  'point', 'finance', false, 'abs', NULL, NULL, 'Главный бухгалтер',     'mart_finance'),
+ ('bank_auto_match_rate',      'Доля строк, разнесённых по подсказке', '%', 'ratio', 'finance', true, 'abs', NULL, NULL, 'Главный бухгалтер', 'mart_finance'),
+ ('edu_at_risk',               'Слушатели под риском отсева',    'чел', 'point', 'edu',     false, 'abs', NULL, NULL, 'Руководитель обучения', 'mart_edu')
+ON CONFLICT (metric_id) DO UPDATE SET title = EXCLUDED.title, unit = EXCLUDED.unit, department = EXCLUDED.department, source = EXCLUDED.source;
 
 -- «Сегодня» показателей: последний загруженный день (данные за вчера).
 CREATE OR REPLACE FUNCTION metrics.as_of() RETURNS date
@@ -209,7 +221,7 @@ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = pg_catalog, pg_temp AS $$
     SELECT d.metric_id, d.title, d.unit, d.department, b.label,
            v.cur, v.prev, metrics.status(d.metric_id, v.cur, v.prev),
            b.cur_from, b.cur_to, b.prev_from, b.prev_to
-    FROM metrics.definitions d CROSS JOIN b
+    FROM (SELECT * FROM metrics.definitions WHERE source = 'metrics') d CROSS JOIN b
     CROSS JOIN LATERAL (SELECT metrics.value(d.metric_id, b.cur_from, b.cur_to)  AS cur,
                                metrics.value(d.metric_id, b.prev_from, b.prev_to) AS prev) v
     ORDER BY d.department, d.metric_id
@@ -293,6 +305,13 @@ GROUP BY doc_date;
 CREATE OR REPLACE VIEW metrics.lead_daily AS
 SELECT created_date AS day, count(*)::numeric AS value
 FROM core.leads WHERE NOT is_duplicate GROUP BY created_date;
+
+-- Детализация cohort_fill_rate (карта: «metrics.<id>_detail»): потоки и проданные места.
+CREATE OR REPLACE VIEW metrics.cohort_fill_rate_detail AS
+SELECT c.cohort_code, c.course, c.format, c.start_date, c.end_date, c.capacity, c.curator,
+       COALESCE((SELECT sum(s.qty) FROM core.sales_docs s WHERE s.cohort_code = c.cohort_code AND NOT s.is_intragroup), 0) AS seats_sold,
+       round(100 * COALESCE((SELECT sum(s.qty) FROM core.sales_docs s WHERE s.cohort_code = c.cohort_code AND NOT s.is_intragroup), 0) / c.capacity, 1) AS fill_pct
+FROM core.cohorts c;
 
 -- Управленческий ОПиУ компании за период: строки по статьям 1С, без внутригрупповых.
 CREATE OR REPLACE FUNCTION metrics.pnl(p_from date, p_to date)

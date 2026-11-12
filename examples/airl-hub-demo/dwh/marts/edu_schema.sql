@@ -23,6 +23,14 @@ CREATE INDEX IF NOT EXISTS edu_flags_cohort ON edu_flags (cohort_code);
 DROP TRIGGER IF EXISTS edu_flags_touch ON edu_flags;
 CREATE TRIGGER edu_flags_touch BEFORE UPDATE ON edu_flags FOR EACH ROW EXECUTE FUNCTION airl_touch();
 
+-- Кто из пользователей хаба — какой куратор потоков (для «только свои потоки»).
+CREATE TABLE IF NOT EXISTS edu_curators (
+    login       text PRIMARY KEY,
+    curator     text NOT NULL,            -- как в core.cohorts.curator
+    created_at  timestamptz NOT NULL DEFAULT now(),
+    created_by  text NOT NULL
+);
+
 INSERT INTO airl_settings (module, key, value, updated_by) VALUES
  ('kit', 'currency', '"KZT"', 'setup'),
  ('edu', 'risk_attendance_below_pct', '60', 'setup')

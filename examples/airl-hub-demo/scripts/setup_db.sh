@@ -96,6 +96,7 @@ SET ROLE svc_sales;
 SET search_path TO mart_sales;
 \i dwh/modules/kit.sql
 \i dwh/modules/plan-fact.schema.sql
+\i dwh/marts/sales_schema.sql
 RESET ROLE;
 SET ROLE svc_edu;
 SET search_path TO mart_edu;
@@ -109,6 +110,7 @@ SQL
   echo "7/8 Настройки модулей (ответы на вопросы MODULE.md, синтетика)"
   psqla -f dwh/marts/finance_config.sql >/dev/null
   psqla -f dwh/marts/sales_config.sql >/dev/null
+  psqla -f dwh/marts/edu_config.sql >/dev/null
   psqla -f dwh/sql/05_grants_ai.sql
 else
   psqla -c "SET ROLE svc_finance; SET search_path TO mart_finance; SELECT pnl_rebuild('nightly'); SELECT bank_suggest('nightly');" >/dev/null

@@ -1,0 +1,194 @@
+/* Общие компоненты хаба AIRL. Цвета — только переменные из airl-tokens.css. */
+@import url("https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=Victor+Mono:wght@400;600&display=swap");
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--airl-color-bg); color: var(--airl-color-text);
+  font: 15px/1.45 var(--airl-font); min-height: 100vh;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+a { color: var(--airl-color-primary-ink); }
+:focus-visible { outline: 3px solid var(--airl-color-primary); outline-offset: 2px; border-radius: 6px; }
+.num, .mono { font-family: var(--airl-font-mono); font-variant-numeric: tabular-nums; }
+.muted { color: var(--airl-color-muted); }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+/* ---------- шапка хаба: тёмная «таблетка» ---------- */
+.topbar {
+  position: sticky; top: 8px; z-index: 20; margin: 8px 12px 0; display: flex; align-items: center; gap: 12px;
+  background: var(--airl-color-text); color: var(--airl-color-on-dark); border-radius: 999px; padding: 6px 8px 6px 18px;
+  box-shadow: var(--airl-shadow); min-height: 56px;
+}
+.topbar .logo { display: flex; align-items: center; gap: 10px; text-decoration: none; color: inherit; min-height: 44px; }
+.topbar .logo img { height: 22px; width: auto; display: block; }
+.topbar .svc { font-weight: 600; opacity: .9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.topbar .spacer { flex: 1; }
+.topbar select, .topbar .user {
+  background: #2a2a31; color: var(--airl-color-on-dark); border: 0; border-radius: 999px; padding: 0 14px;
+  min-height: 44px; font: inherit; font-size: 14px;
+}
+.topbar .user { display: flex; align-items: center; gap: 8px; }
+.topbar .user .role { font-family: var(--airl-font-mono); font-size: 12px; opacity: .75; }
+.topbar button.logout {
+  background: var(--airl-color-primary); color: var(--airl-color-text); border: 0; border-radius: 999px;
+  min-height: 44px; padding: 0 18px; font: inherit; font-weight: 600; cursor: pointer;
+}
+
+/* ---------- раскладка: меню слева на компьютере, вкладки снизу на телефоне ---------- */
+.layout { display: grid; grid-template-columns: 220px 1fr; gap: var(--airl-gap); padding: 16px 12px 32px; max-width: 1440px; margin: 0 auto; }
+.sidenav { position: sticky; top: 80px; align-self: start; display: flex; flex-direction: column; gap: 4px; }
+.sidenav a {
+  display: flex; align-items: center; min-height: 44px; padding: 0 16px; border-radius: 999px; text-decoration: none;
+  color: var(--airl-color-text); font-weight: 500;
+}
+.sidenav a[aria-current="page"] { background: var(--airl-color-text); color: var(--airl-color-on-dark); }
+.sidenav .group { margin: 12px 16px 4px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--airl-color-muted); }
+main { min-width: 0; }
+.page-head { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 4px 0 16px; }
+.page-head h1 { font-size: 26px; line-height: 1.15; margin: 0; letter-spacing: -.01em; }
+.page-head .sub { color: var(--airl-color-muted); font-size: 14px; }
+.page-head .spacer { flex: 1; }
+
+/* ---------- переключатель периода ---------- */
+.seg { display: inline-flex; background: var(--airl-color-surface); border-radius: 999px; padding: 4px; gap: 2px; box-shadow: var(--airl-shadow); }
+.seg button {
+  border: 0; background: transparent; border-radius: 999px; min-height: 40px; min-width: 44px; padding: 0 14px;
+  font: inherit; font-weight: 500; color: var(--airl-color-text); cursor: pointer;
+}
+.seg button[aria-pressed="true"] { background: var(--airl-color-text); color: var(--airl-color-on-dark); }
+
+/* ---------- карточки показателей ---------- */
+.kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; margin-bottom: var(--airl-gap); }
+.kpi {
+  background: var(--airl-color-surface); border-radius: var(--airl-radius-card); padding: 16px 18px; box-shadow: var(--airl-shadow);
+  display: flex; flex-direction: column; gap: 6px; border-left: 5px solid transparent; min-height: 132px;
+}
+.kpi.ok { border-left-color: var(--airl-color-success); }
+.kpi.warning { border-left-color: var(--airl-color-warning); }
+.kpi.danger { border-left-color: var(--airl-color-danger); }
+.kpi .l { font-size: 13px; color: var(--airl-color-muted); font-weight: 500; }
+.kpi .v { font-family: var(--airl-font-mono); font-size: 25px; font-weight: 600; letter-spacing: -.02em; overflow-wrap: anywhere; }
+.kpi .s { font-size: 12.5px; color: var(--airl-color-muted); }
+.delta { display: inline-flex; align-items: center; gap: 4px; border-radius: 999px; padding: 2px 9px; font-size: 12.5px; font-weight: 600; width: fit-content; }
+.delta.up { background: var(--airl-color-success-bg); color: var(--airl-color-success); }
+.delta.down { background: var(--airl-color-danger-bg); color: var(--airl-color-danger); }
+.delta.flat { background: var(--airl-color-surface-2); color: var(--airl-color-muted); }
+
+.card { background: var(--airl-color-surface); border-radius: var(--airl-radius-card); padding: 18px; box-shadow: var(--airl-shadow); margin-bottom: var(--airl-gap); min-width: 0; }
+.card h2 { font-size: 17px; margin: 0 0 12px; display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; }
+.card h2 .sub { font-size: 13px; font-weight: 400; color: var(--airl-color-muted); }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: var(--airl-gap); }
+.grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--airl-gap); }
+.note { background: var(--airl-color-warning-bg); border-radius: var(--airl-radius-sm); padding: 10px 14px; font-size: 13.5px; margin-bottom: 12px; }
+
+/* ---------- светофор ---------- */
+.badge { display: inline-block; border-radius: 999px; padding: 2px 10px; font-size: 12px; font-weight: 600; }
+.badge.ok { background: var(--airl-color-success-bg); color: var(--airl-color-success); }
+.badge.warning { background: var(--airl-color-warning-bg); color: var(--airl-color-warning); }
+.badge.danger { background: var(--airl-color-danger-bg); color: var(--airl-color-danger); }
+.badge.gray { background: var(--airl-color-surface-2); color: var(--airl-color-muted); }
+
+/* ---------- таблицы (на телефоне — карточки) ---------- */
+.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
+.tbl th { text-align: left; font-weight: 600; color: var(--airl-color-muted); font-size: 12.5px; padding: 8px 10px; border-bottom: 1px solid var(--airl-color-line); }
+.tbl td { padding: 9px 10px; border-bottom: 1px solid var(--airl-color-line); vertical-align: top; }
+.tbl td.n, .tbl th.n { text-align: right; font-family: var(--airl-font-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tbl tr.is-section td { font-weight: 600; }
+.tbl tr.is-margin td { background: var(--airl-color-margin-bg); font-weight: 600; }
+.tbl tr.is-net td { background: var(--airl-color-net-bg); font-weight: 700; }
+.tbl tr.is-sub td:first-child { padding-left: 26px; color: var(--airl-color-muted); }
+.tbl .neg { color: var(--airl-color-danger); }
+.tbl .pos { color: var(--airl-color-success); }
+.scroll-x { overflow-x: auto; }
+
+/* ---------- кнопки и формы ---------- */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; padding: 0 20px;
+  border-radius: var(--airl-radius); border: 0; font: inherit; font-weight: 600; cursor: pointer; text-decoration: none;
+  background: var(--airl-color-text); color: var(--airl-color-on-dark);
+}
+.btn.secondary { background: var(--airl-color-surface-2); color: var(--airl-color-text); }
+.btn.accent { background: var(--airl-color-primary); color: var(--airl-color-text); }
+.btn.small { min-height: 44px; padding: 0 14px; font-size: 14px; }
+.btn[disabled] { opacity: .55; cursor: not-allowed; }
+label { display: block; font-size: 13px; color: var(--airl-color-muted); margin: 10px 0 4px; }
+input, select, textarea {
+  width: 100%; min-height: 48px; border-radius: var(--airl-radius); border: 1px solid var(--airl-color-line);
+  background: #fff; padding: 0 18px; font: inherit; color: var(--airl-color-text);
+}
+textarea { padding: 12px 18px; min-height: 90px; border-radius: var(--airl-radius-sm); }
+.form-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: end; }
+.form-row > * { flex: 1 1 160px; }
+
+/* ---------- графики (SVG) ---------- */
+.chart { width: 100%; height: auto; display: block; }
+.chart .axis { fill: var(--airl-color-muted); font-size: 11px; font-family: var(--airl-font-mono); }
+.chart .grid { stroke: var(--airl-color-line); stroke-width: 1; }
+.chart .bar { fill: var(--airl-color-primary); }
+.chart .bar.prev { fill: var(--airl-color-surface-2); }
+.chart .bar.cur { fill: var(--airl-color-text); }
+.chart .line { fill: none; stroke: var(--airl-color-text); stroke-width: 2; }
+.legend { display: flex; gap: 14px; font-size: 12.5px; color: var(--airl-color-muted); flex-wrap: wrap; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: middle; }
+.hbar { display: grid; grid-template-columns: 140px 1fr 110px; gap: 10px; align-items: center; margin: 6px 0; font-size: 13.5px; }
+.hbar .track { background: var(--airl-color-surface-2); border-radius: 999px; height: 12px; overflow: hidden; }
+.hbar .fill { background: var(--airl-color-primary); height: 100%; border-radius: 999px; }
+.hbar .fill.warning { background: var(--airl-color-warning); }
+.hbar .fill.danger { background: var(--airl-color-danger); }
+.hbar .r { text-align: right; }
+
+/* ---------- плитки сервисов ---------- */
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 12px; margin-bottom: var(--airl-gap); }
+.tile { background: var(--airl-color-surface); border-radius: var(--airl-radius-card); padding: 16px 18px; box-shadow: var(--airl-shadow); display: flex; flex-direction: column; gap: 10px; }
+.tile header { display: flex; align-items: center; gap: 8px; }
+.tile header h3 { margin: 0; font-size: 16px; flex: 1; }
+.tile .row { display: flex; justify-content: space-between; gap: 10px; font-size: 14px; align-items: baseline; }
+.tile .row .num { font-weight: 600; }
+.tile .alerts { font-size: 13px; color: var(--airl-color-warning); margin: 0; padding-left: 18px; }
+.tile.gray { opacity: .7; }
+.alert-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.alert-list li { display: flex; gap: 10px; align-items: flex-start; background: var(--airl-color-bg); border-radius: var(--airl-radius-sm); padding: 10px 12px; font-size: 14px; }
+
+/* ---------- состояния экрана ---------- */
+.skeleton { background: linear-gradient(90deg, var(--airl-color-surface-2), var(--airl-color-surface), var(--airl-color-surface-2)); background-size: 200% 100%; animation: sk 1.2s infinite; border-radius: var(--airl-radius-card); min-height: 132px; }
+@keyframes sk { to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .skeleton { animation: none; } }
+.state { background: var(--airl-color-surface); border-radius: var(--airl-radius-card); padding: 24px; text-align: center; color: var(--airl-color-muted); }
+.state.error { color: var(--airl-color-danger); }
+.offline-bar, .update-bar {
+  position: fixed; left: 12px; right: 12px; bottom: calc(76px + env(safe-area-inset-bottom)); z-index: 30; background: var(--airl-color-text); color: var(--airl-color-on-dark);
+  border-radius: 999px; padding: 10px 18px; display: flex; gap: 12px; align-items: center; justify-content: space-between; font-size: 14px;
+}
+.update-bar button { background: var(--airl-color-primary); border: 0; border-radius: 999px; min-height: 40px; padding: 0 14px; font: inherit; font-weight: 600; }
+dialog { border: 0; border-radius: var(--airl-radius-card); padding: 20px; width: min(520px, calc(100vw - 24px)); background: var(--airl-color-surface); color: var(--airl-color-text); }
+dialog::backdrop { background: rgba(22, 22, 26, .45); }
+
+@media (max-width: 900px) {
+  .layout { grid-template-columns: 1fr; padding: 12px 10px 96px; }
+  .sidenav {
+    position: fixed; left: 8px; right: 8px; bottom: calc(8px + env(safe-area-inset-bottom)); top: auto; z-index: 25; flex-direction: row;
+    background: var(--airl-color-text); border-radius: 999px; padding: 6px; overflow-x: auto; box-shadow: var(--airl-shadow);
+  }
+  .sidenav a { color: var(--airl-color-on-dark); white-space: nowrap; font-size: 14px; padding: 0 14px; flex: 1 0 auto; justify-content: center; }
+  .sidenav a[aria-current="page"] { background: var(--airl-color-primary); color: var(--airl-color-text); }
+  .sidenav .group { display: none; }
+  .grid2, .grid3 { grid-template-columns: 1fr; }
+  .topbar { padding-left: 14px; gap: 8px; }
+  .topbar .svc { display: none; }
+  .topbar .user .name { display: none; }
+  .page-head h1 { font-size: 22px; }
+  .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .kpi { padding: 14px; min-height: 120px; }
+  .kpi .v { font-size: 19px; }
+  .hbar { grid-template-columns: 96px 1fr 92px; font-size: 12.5px; }
+  /* таблица → карточки */
+  .tbl.cards thead { display: none; }
+  .tbl.cards tr { display: block; background: var(--airl-color-bg); border-radius: var(--airl-radius-sm); margin-bottom: 8px; padding: 6px 4px; }
+  .tbl.cards td { display: flex; justify-content: space-between; gap: 12px; border: 0; padding: 5px 10px; text-align: right; }
+  .tbl.cards td::before { content: attr(data-label); color: var(--airl-color-muted); text-align: left; font-family: var(--airl-font); font-size: 12.5px; }
+  .tbl.cards td.n { white-space: normal; }
+}
+@media (max-width: 380px) { .kpis { grid-template-columns: 1fr; } }
+
+pre.digest { white-space: pre-wrap; margin: 0; font-size: 13px; line-height: 1.55; background: var(--airl-color-bg); border-radius: var(--airl-radius-sm); padding: 12px 14px; }
