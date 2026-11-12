@@ -1,0 +1,5 @@
+✔ pnl-cashflow: m_pnl_cash_balance=15 m_pnl_gross_margin=60 m_pnl_net_profit=70 v_pnl_alloc_check=2 v_pnl_allocations=180 v_pnl_article_tree=23 v_pnl_articles=16 v_pnl_cash_balance=15 v_pnl_cashflow=160 v_pnl_drill=798 v_pnl_periods=15 v_pnl_report=1618 v_pnl_unmapped=2 
+✔ receivables: m_receivables_overdue=1 m_receivables_overdue_share=1 v_rcv_actions=6 v_rcv_aging=13 v_rcv_by_manager=5 v_rcv_data_quality=9 v_rcv_docs=25 v_rcv_promises=3 
+✔ bank-reconciliation: m_bank_auto_match_rate=3 m_bank_unmatched_count=1 v_bank_export_1c=39 v_bank_lines=45 v_bank_matches=48 v_bank_open_items=50 v_bank_rule_stats=7 v_bank_suggestions=5 v_bank_summary=4 v_bank_unmatched=7 
+✔ plan-fact: m_plan_completion=16 v_pf_current=18 v_pf_facts_month=448 v_pf_history=64 v_pf_plan_fact=90 v_pf_plans=91 v_pf_signals=2 
+✔ все вместе: 4 модулей в одной схеме, 8 показателей читаются из другой схемы

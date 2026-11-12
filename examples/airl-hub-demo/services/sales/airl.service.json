@@ -1,0 +1,31 @@
+{
+  "$schema": "airl.service/v1",
+  "id": "sales",
+  "title": "Продажи",
+  "department": "sales",
+  "map_version": "1.0",
+  "spec_version": "1.0",
+  "version": "1.0.0",
+  "owner": "Руководитель продаж (демо)",
+  "base_path": "/sales",
+  "roles": {
+    "view": ["ceo", "head_sales", "staff_sales"],
+    "edit": ["head_sales", "staff_sales"],
+    "summary": ["ceo", "head_sales"]
+  },
+  "data": {
+    "reads": ["core.leads", "core.managers",
+              "metrics.m_lead", "metrics.m_conversion_lead_to_deal", "metrics.m_avg_check", "metrics.kpi_period",
+              "metrics.series", "metrics.lead_funnel", "mart_sales.src_pf_facts"],
+    "reads_shared": [],
+    "writes": ["mart_sales"]
+  },
+  "modules": ["plan-fact"],
+  "public_paths": [],
+  "hub": {
+    "health": "/sales/healthz",
+    "summary": "/sales/api/hub/summary",
+    "metrics": ["lead", "conversion_lead_to_deal", "avg_check", "plan_completion"]
+  },
+  "pii": []
+}

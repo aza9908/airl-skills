@@ -1,0 +1,16 @@
+{
+  "name": "Финансы — Хаб AIRL (демо)",
+  "short_name": "Финансы",
+  "id": "/finance/",
+  "start_url": "/finance/",
+  "scope": "/finance/",
+  "display": "standalone",
+  "background_color": "#e8e8f2",
+  "theme_color": "#16161a",
+  "lang": "ru",
+  "icons": [
+    { "src": "/finance/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/finance/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/finance/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

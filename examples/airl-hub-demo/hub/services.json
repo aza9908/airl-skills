@@ -1,0 +1,13 @@
+{
+  "services": [
+    { "id": "finance", "title": "Финансы", "base_path": "/finance",
+      "upstream": "finance:3001", "version": "1.0.0", "map_version": "1.0",
+      "status": "connected", "connected_at": "2026-11-12", "checked_by": "команда AIRL (демо, check_service.py)" },
+    { "id": "sales", "title": "Продажи", "base_path": "/sales",
+      "upstream": "sales:3002", "version": "1.0.0", "map_version": "1.0",
+      "status": "connected", "connected_at": "2026-11-12", "checked_by": "команда AIRL (демо, check_service.py)" },
+    { "id": "edu", "title": "Обучение", "base_path": "/edu",
+      "upstream": "edu:3003", "version": "1.0.0", "map_version": "1.0",
+      "status": "connected", "connected_at": "2026-11-12", "checked_by": "команда AIRL (демо, check_service.py)" }
+  ]
+}

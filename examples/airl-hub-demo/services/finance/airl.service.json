@@ -1,0 +1,35 @@
+{
+  "$schema": "airl.service/v1",
+  "id": "finance",
+  "title": "Финансы",
+  "department": "finance",
+  "map_version": "1.0",
+  "spec_version": "1.0",
+  "version": "1.0.0",
+  "owner": "Финансовый директор (демо)",
+  "base_path": "/finance",
+  "roles": {
+    "view": ["ceo", "head_finance", "staff_finance"],
+    "edit": ["head_finance", "staff_finance"],
+    "summary": ["ceo", "head_finance"]
+  },
+  "data": {
+    "reads": ["core.sales_docs", "core.clients", "core.cash_accounts",
+              "metrics.m_revenue", "metrics.m_gross_margin", "metrics.m_net_profit", "metrics.m_cash_balance",
+              "metrics.m_receivables_overdue", "metrics.kpi_period",
+              "mart_finance.src_pnl_entries", "mart_finance.src_pnl_cash", "mart_finance.src_receivables_docs",
+              "mart_finance.src_rcv_clients", "mart_finance.src_bank_statement_lines", "mart_finance.src_bank_open_items"],
+    "reads_shared": [],
+    "writes": ["mart_finance"]
+  },
+  "modules": ["pnl-cashflow", "receivables", "bank-reconciliation"],
+  "public_paths": [],
+  "hub": {
+    "health": "/finance/healthz",
+    "summary": "/finance/api/hub/summary",
+    "metrics": ["revenue", "gross_margin", "cash_balance", "receivables_overdue"]
+  },
+  "pii": ["core.clients.name (физлица)", "core.clients.tax_id", "core.clients.phone", "core.clients.email",
+          "src_bank_statement_lines.counterparty_name", "src_bank_statement_lines.counterparty_tax_id",
+          "src_bank_statement_lines.purpose"]
+}

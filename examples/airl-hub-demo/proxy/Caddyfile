@@ -1,0 +1,25 @@
+# Сгенерировано scripts/gen_caddy.js из hub/services.json — руками не править.
+# HUB_SITE: ":80" локально (docker compose) или "hub.<домен>" на сервере (сертификат выпустит Caddy).
+{$HUB_SITE::80} {
+    encode gzip
+    header -Server
+
+    redir /finance /finance/ 308
+    handle /finance/* {
+        reverse_proxy finance:3001
+    }
+
+    redir /sales /sales/ 308
+    handle /sales/* {
+        reverse_proxy sales:3002
+    }
+
+    redir /edu /edu/ 308
+    handle /edu/* {
+        reverse_proxy edu:3003
+    }
+
+    handle {
+        reverse_proxy hub:3000
+    }
+}
