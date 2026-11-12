@@ -36,7 +36,7 @@ for s in finance sales edu; do
 done
 
 echo "== 2. Модули на чистой тестовой базе: test_modules.sh (отдельная база airl_demo_modtest)"
-psql "$ADMIN_DATABASE_URL" -qXc "DROP DATABASE IF EXISTS airl_demo_modtest" -c "CREATE DATABASE airl_demo_modtest" >/dev/null
+psql "$ADMIN_DATABASE_URL" -qXc "DROP DATABASE IF EXISTS airl_demo_modtest" -c "CREATE DATABASE airl_demo_modtest" >/dev/null 2>&1
 DATABASE_URL=$(url_for airl_demo_modtest) bash "$SKILLS/airl-modules/scripts/test_modules.sh" pnl-cashflow receivables bank-reconciliation plan-fact > $OUT/test_modules.txt 2>&1
 code=$?; echo "  код выхода $code"; [ $code -eq 0 ] || rc=1
 psql "$ADMIN_DATABASE_URL" -qXc "DROP DATABASE IF EXISTS airl_demo_modtest" >/dev/null
@@ -44,7 +44,7 @@ psql "$ADMIN_DATABASE_URL" -qXc "DROP DATABASE IF EXISTS airl_demo_modtest" >/de
 echo "== 3. Сверка «одни цифры»: модули витрин = metrics"
 psql "$ADMIN_DB_URL" -X -f tests/reconcile.sql > $OUT/reconcile.txt 2>&1
 cat $OUT/reconcile.txt | sed 's/^/  /'
-grep -qE '\| +[1-9][0-9]* \|' $OUT/reconcile.txt && { echo "  есть расхождения"; rc=1; }
+if awk -F'|' 'NF>=4 && $3 ~ /^ *[0-9]+ *$/ && $3+0 > 0 {bad=1} END {exit !bad}' $OUT/reconcile.txt; then echo "  есть расхождения"; rc=1; else echo "  расхождений нет"; fi
 
 echo "== 4. Атаки безопасности"
 node tests/security_attacks.js "$URL" > $OUT/security_attacks.md 2>&1; code=$?

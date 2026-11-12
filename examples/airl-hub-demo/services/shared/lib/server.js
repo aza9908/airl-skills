@@ -43,13 +43,15 @@ function send(res, status, body, headers = {}) {
 
 function readJson(req, limit = 32 * 1024) {
   return new Promise((resolve, reject) => {
-    let size = 0; const chunks = [];
+    let size = 0; let over = false; const chunks = [];
     req.on('data', (c) => {
       size += c.length;
-      if (size > limit) { reject(new HttpError(413, 'Слишком большой запрос')); req.destroy(); return; }
+      // Сверх лимита — дочитываем и выбрасываем, чтобы клиент получил ответ 413, а не обрыв связи.
+      if (size > limit) { if (!over) { over = true; reject(new HttpError(413, 'Слишком большой запрос')); } return; }
       chunks.push(c);
     });
     req.on('end', () => {
+      if (over) return;
       if (!chunks.length) return resolve({});
       try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8'))); }
       catch { reject(new HttpError(400, 'Тело запроса — не JSON')); }
