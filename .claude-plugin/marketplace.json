@@ -9,7 +9,7 @@
     {
       "name": "airl",
       "source": "./",
-      "description": "Навыки AIRL: /airl-spec, /airl-modules, /airl-connect, /airl-dwh, /airl-pwa, /airl-cybersecurity, /airl-devops, /airl-ai, /airl-hub, /airl-architecture-extra, /airl-integrations, /airl-code-review, /airl-debug, /airl-context"
+      "description": "Навыки AIRL: /airl-spec, /airl-modules, /airl-connect, /airl-dwh, /airl-pwa, /airl-cybersecurity, /airl-devops, /airl-ai, /airl-hub, /airl-architecture-extra, /airl-integrations, /airl-code-review, /airl-debug, /airl-context, /airl-progress"
     }
   ]
 }
