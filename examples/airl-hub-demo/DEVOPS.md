@@ -62,6 +62,19 @@ docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile
 ```
 Ночной пересчёт (cron на сервере): `bash scripts/setup_db.sh --reload && bash ai/run_digest.sh`.
 
+## Выкладка на сервер одной командой
+
+Нужен чистый сервер Ubuntu 22.04/24.04 (2 vCPU, 4 ГБ RAM, 30 ГБ диска; для настоящих данных — в РК),
+DNS-запись A домена (например `hub-demo.airl.kz`) на IP сервера и открытые порты 80 и 443. На сервере:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/aza9908/airl-skills/main/examples/airl-hub-demo/scripts/deploy_server.sh | sudo bash -s -- hub-demo.airl.kz
+```
+
+Скрипт ставит Docker, скачивает код, создаёт `.env` со случайными паролями (повторный запуск их сохраняет),
+включает домен и HTTPS (сертификат выпускает Caddy) и ждёт, пока `https://<домен>/healthz` ответит.
+Пароль демо-пользователей — строка `DEMO_PASSWORD` в `/srv/airl-skills/examples/airl-hub-demo/.env`.
+
 ## Памятка начинающему
 | Порт | Что | Снаружи |
 |---|---|---|
