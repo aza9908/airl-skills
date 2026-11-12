@@ -11,7 +11,7 @@
 ✔ ceo после входа на экране руководителя (телефон)
 ✔ ceo: имена физлиц-должников замаскированы
 ✔ ceo: ошибок в консоли нет ()
-✔ head_finance видит только показатели финансов: revenue, gross_margin, net_profit, cash_balance, receivables_overdue
+✔ head_finance видит только показатели финансов: cash_balance, revenue, net_profit, gross_margin, receivables_overdue
 ✔ head_finance: плитка только своего отдела (finance)
 ✔ head_finance: воронки продаж нет
 ✔ переключатель отделов: Экран руководителя, Финансы

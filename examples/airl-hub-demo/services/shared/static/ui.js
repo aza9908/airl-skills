@@ -26,6 +26,7 @@ const AIRL = (() => {
     if (!u || s === '—' || !s.endsWith(u)) return esc(s);
     return `${esc(s.slice(0, s.length - u.length).replace(/ $/, ''))}${THIN}<span class="cur">${esc(u)}</span>`;
   }
+  const lenCls = (v, unit) => (fmtValue(v, unit).length >= 13 ? ' len-l' : '');
   const fmtMoney = (v) => fmtValue(v, 'KZT');
   function fmtShort(v) { // для осей графиков: 48,3 млн
     const n = Number(v); const a = Math.abs(n);
@@ -133,12 +134,12 @@ const AIRL = (() => {
     const neg = Number(m.value) < 0 ? ' neg' : '';
     return `<div class="kpi ${esc(m.status || '')} ${cls}" data-metric="${esc(m.id || m.metric_id)}">
       <div class="l"><span>${esc(m.title)}</span><span class="dot" aria-hidden="true"></span></div>
-      <div class="v${neg}" data-value="${esc(m.value)}">${fmtBig(m.value, m.unit)}</div>
+      <div class="v${neg}${lenCls(m.value, m.unit)}" data-value="${esc(m.value)}">${fmtBig(m.value, m.unit)}</div>
       <div class="s">${sub ? esc(sub) + ' · ' : ''}${delta(m.value, prev, { lowerIsBetter, unit: m.unit })}</div></div>`;
   }
   // Карточка без показателя карты (модуль, прогноз): заголовок, крупная цифра, подпись.
   const statCard = (title, value, unit, sub, status = '') => `<div class="kpi ${esc(status)}"><div class="l"><span>${esc(title)}</span><span class="dot" aria-hidden="true"></span></div>
-      <div class="v${Number(value) < 0 ? ' neg' : ''}">${fmtBig(value, unit)}</div><div class="s">${esc(sub || '')}</div></div>`;
+      <div class="v${Number(value) < 0 ? ' neg' : ''}${lenCls(value, unit)}">${fmtBig(value, unit)}</div><div class="s">${esc(sub || '')}</div></div>`;
 
   // ---------- графики ----------
   let gid = 0;
@@ -154,24 +155,34 @@ const AIRL = (() => {
     return t;
   }
 
+  // Ширина рисунка = ширине карточки в пикселях, чтобы подписи осей были настоящего размера.
+  // span: full — карточка во всю ширину, half — половина, wide/narrow — колонки 1,4 : 1.
+  function cw(span = 'half') {
+    const v = (document.getElementById('view') || document.body).clientWidth || 1000;
+    const pad = window.innerWidth <= 640 ? 36 : 60;
+    let w = v;
+    if (window.innerWidth > 900) w = { half: (v - 20) / 2, wide: (v - 20) * 1.4 / 2.4, narrow: (v - 20) / 2.4 }[span] || v;
+    return Math.max(280, Math.round(w - pad));
+  }
+
   // Столбчатый график; series = [{label, value, cls?, title?}]. Скругление только сверху.
-  function barChart(series, { height = 240, fmt = fmtShort } = {}) {
-    return groupedBars(series.map((s) => s.label), [{ values: series.map((s) => s.value), cls: series.map((s) => s.cls || ''), titles: series.map((s) => s.title) }], { height, fmt, legend: false });
+  function barChart(series, { height = 240, fmt = fmtShort, span, width } = {}) {
+    return groupedBars(series.map((s) => s.label), [{ values: series.map((s) => s.value), cls: series.map((s) => s.cls || ''), titles: series.map((s) => s.title) }], { height, fmt, legend: false, span, width });
   }
 
   // Сгруппированные столбцы: labels[], groups = [{name, values[], cls}] (фиолетовый и чёрный).
-  function groupedBars(labels, groups, { height = 260, fmt = fmtShort, legend = true } = {}) {
-    const W = 680; const H = height; const L = 62; const B = 30; const T = 12; const R = 6;
+  function groupedBars(labels, groups, { height = 260, fmt = fmtShort, legend = true, span, width } = {}) {
+    const W = width || cw(span); const H = height; const L = 62; const B = 30; const T = 12; const R = 6;
     const all = groups.flatMap((g) => g.values.map((v) => Number(v) || 0));
     const ticks = axisTicks(Math.min(0, ...all), Math.max(1, ...all));
-    const min = ticks[0]; const max = ticks[ticks.length - 1]; const span = max - min || 1;
-    const y = (v) => T + (H - T - B) * (1 - (v - min) / span);
+    const min = ticks[0]; const max = ticks[ticks.length - 1]; const rng = max - min || 1;
+    const y = (v) => T + (H - T - B) * (1 - (v - min) / rng);
     const n = Math.max(1, labels.length); const slot = (W - L - R) / n;
     const gap = groups.length > 1 ? Math.min(8, slot * 0.06) : 0;
     const bw = Math.min(46, (slot * 0.66 - gap * (groups.length - 1)) / groups.length);
     let svg = `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="График">`;
     for (const t of ticks) svg += `<line class="grid" x1="${L}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}"/><text class="axis" x="${L - 12}" y="${y(t) + 4}" text-anchor="end">${esc(fmt(t))}</text>`;
-    const every = Math.ceil(n / 12);
+    const every = Math.ceil(n / Math.max(2, Math.floor((W - L) / 50)));
     labels.forEach((lab, i) => {
       const cx = L + slot * i + slot / 2; const total = bw * groups.length + gap * (groups.length - 1);
       groups.forEach((g, gi) => {
@@ -182,7 +193,7 @@ const AIRL = (() => {
         svg += v >= 0 ? `<path class="bar ${esc(cls)}" d="${topRounded(x, top, bw, h, 7)}"><title>${esc(tip)}</title></path>`
           : `<rect class="bar ${esc(cls)}" x="${x}" y="${y(0)}" width="${bw}" height="${h}" rx="3"><title>${esc(tip)}</title></rect>`;
       });
-      if (i % every === 0 || i === n - 1) svg += `<text class="axis" x="${cx}" y="${H - 6}" text-anchor="middle">${esc(lab)}</text>`;
+      if (i % every === 0 || (i === n - 1 && i - Math.floor(i / every) * every >= every * 0.6)) svg += `<text class="axis" x="${cx}" y="${H - 6}" text-anchor="middle">${esc(lab)}</text>`;
     });
     svg += '</svg>';
     if (legend && groups.length > 1) svg += `<div class="legend">${groups.map((g, gi) => `<span><i class="${gi ? 's2' : ''}"></i>${esc(g.name)}</span>`).join('')}</div>`;
@@ -190,15 +201,15 @@ const AIRL = (() => {
   }
 
   // Площадной график (фиолетовая линия + градиентная заливка). dark — для тёмной карточки.
-  function areaChart(points, { height = 190, dark = false, fmt = fmtShort } = {}) {
-    const W = 600; const H = height; const T = 14; const B = dark ? 6 : 28; const L = dark ? 0 : 56; const R = dark ? 0 : 8;
+  function areaChart(points, { height = 190, dark = false, fmt = fmtShort, span, width } = {}) {
+    const W = width || cw(span || (dark ? 'narrow' : 'half')); const H = height; const T = 14; const B = dark ? 6 : 28; const L = dark ? 0 : 56; const R = dark ? 0 : 8;
     const vals = points.map((p) => Number(p.value) || 0);
     if (!vals.length) return '';
     const lo = Math.min(...vals); const hi = Math.max(...vals);
     const min = dark ? lo - (hi - lo || 1) * 0.15 : Math.min(0, lo); const max = hi + (hi - lo || 1) * 0.08;
-    const span = max - min || 1;
+    const rng = max - min || 1;
     const x = (i) => L + (W - L - R) * (vals.length === 1 ? 0.5 : i / (vals.length - 1));
-    const y = (v) => T + (H - T - B) * (1 - (v - min) / span);
+    const y = (v) => T + (H - T - B) * (1 - (v - min) / rng);
     const pts = vals.map((v, i) => [x(i), y(v)]);
     let d = `M${pts[0][0]},${pts[0][1]}`;
     for (let i = 1; i < pts.length; i++) { // плавная кривая (кардинальный сплайн)
@@ -211,8 +222,8 @@ const AIRL = (() => {
       <defs><linearGradient id="${id}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#8f7bf0" stop-opacity="${dark ? 0.5 : 0.32}"/><stop offset="1" stop-color="#8f7bf0" stop-opacity="0"/></linearGradient></defs>`;
     if (!dark) {
       for (const t of axisTicks(min, max).filter((t) => t >= min && t <= max)) svg += `<line class="grid" x1="${L}" x2="${W - R}" y1="${y(t)}" y2="${y(t)}"/><text class="axis" x="${L - 10}" y="${y(t) + 4}" text-anchor="end">${esc(fmt(t))}</text>`;
-      const every = Math.ceil(points.length / 8);
-      points.forEach((p, i) => { if (i % every === 0 || i === points.length - 1) svg += `<text class="axis" x="${x(i)}" y="${H - 6}" text-anchor="${i === 0 ? 'start' : i === points.length - 1 ? 'end' : 'middle'}">${esc(p.label)}</text>`; });
+      const every = Math.ceil(points.length / Math.max(2, Math.floor((W - L) / 64)));
+      points.forEach((p, i) => { if (i % every === 0 || (i === points.length - 1 && i - Math.floor(i / every) * every >= every * 0.6)) svg += `<text class="axis" x="${x(i)}" y="${H - 6}" text-anchor="${i === 0 ? 'start' : i === points.length - 1 ? 'end' : 'middle'}">${esc(p.label)}</text>`; });
     }
     svg += `<path d="${d}L${pts[pts.length - 1][0]},${base}L${pts[0][0]},${base}Z" fill="url(#${id})"/><path class="area-line" d="${d}" vector-effect="non-scaling-stroke"/>`;
     points.forEach((p, i) => { svg += `<circle cx="${pts[i][0]}" cy="${pts[i][1]}" r="9" fill="transparent"><title>${esc(p.label)}: ${esc(p.title || fmt(p.value))}</title></circle>`; });
@@ -284,6 +295,6 @@ const AIRL = (() => {
   }
   document.addEventListener('click', (e) => { if (e.target.closest('.js-reload')) location.reload(); });
 
-  return { applyWidths, esc, fmtValue, fmtBig, fmtMoney, fmtShort, fmtTime, fmtStamp, delta, api, post, logout, topbar, caption, updated, nav, head, brandHtml,
+  return { lenCls, applyWidths, esc, fmtValue, fmtBig, fmtMoney, fmtShort, fmtTime, fmtStamp, delta, api, post, logout, topbar, caption, updated, nav, head, brandHtml,
     loading, empty, errorBox, kpiCard, statCard, barChart, groupedBars, areaChart, donut, hbars, registerSW, revealTab, pad2 };
 })();

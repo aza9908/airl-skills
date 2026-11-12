@@ -1,7 +1,7 @@
 'use strict';
 /* Service worker оболочки хаба. Управляет всем доменом, поэтому НЕ трогает пути сервисов
    отделов (/finance/, /sales/, /edu/ — список из реестра) и вход/выход. */
-const VERSION = 'hub-v1';
+const VERSION = 'hub-v2';
 const SHELL = ['/', '/app.js', '/login', '/login.js', '/login.css', '/manifest.webmanifest',
   '/assets/airl-tokens.css', '/assets/ui.css', '/assets/ui.js', '/assets/logo-airl-white.png', '/assets/star-mark.svg'];
 const SERVICE_PATHS = ['/finance', '/sales', '/edu'];

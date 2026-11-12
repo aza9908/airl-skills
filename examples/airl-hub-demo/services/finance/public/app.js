@@ -15,7 +15,8 @@
     { id: 'cash', title: 'ДДС', href: '#/cash' }, { id: 'debtors', title: 'Должники', href: '#/debtors' },
     { id: 'bank', title: 'Сверка банка', href: '#/bank' },
   ];
-  const head = (t, sub, right = '') => `<div class="page-head"><div><h1>${esc(t)}</h1><div class="sub">${esc(sub || '')}</div></div><span class="spacer"></span>${right}</div>`;
+  let curNo = 1;
+  const head = (t, sub, right = '') => AIRL.head(curNo, t, sub, right);
 
   async function overview() {
     view.innerHTML = head('Финансы', 'Загружаем…') + loading(5);
@@ -24,7 +25,7 @@
     const rev = d.revenue.map((r, i) => ({ label: r.period.slice(5) + '.' + r.period.slice(2, 4), value: r.value, cls: i === d.revenue.length - 1 ? 'cur' : '' }));
     view.innerHTML = head('Финансы', 'Текущий месяц с 1-го по вчера против тех же дней прошлого месяца · цифры из metrics')
       + `<div class="kpis">${d.kpis.map((k) => kpiCard({ ...k, id: k.metric_id }, { lowerIsBetter: LOWER.has(k.metric_id), sub: `было ${fmtValue(k.prev_value, k.unit)}` })).join('')}${mods}</div>`
-      + `<div class="card"><h2>Выручка по месяцам <span class="sub">· без НДС и внутригрупповых · последний месяц неполный</span></h2>${barChart(rev, { fmt: fmtShort })}</div>`
+      + `<div class="card"><h2>Выручка по месяцам <span class="sub">без НДС и внутригрупповых · последний месяц неполный</span></h2>${barChart(rev, { fmt: fmtShort, span: 'full' })}</div>`
       + `<div class="grid3"><a class="btn" href="#/debtors">Должники →</a><a class="btn secondary" href="#/bank">Сверка банка →</a><a class="btn secondary" href="#/pnl">ОПиУ →</a></div>`;
   }
 
@@ -54,7 +55,7 @@
     const pts = d.balance.map((r, i) => ({ label: r.period.slice(5) + '.' + r.period.slice(2, 4), value: r.closing, cls: i === d.balance.length - 1 ? 'cur' : '' }));
     const rows = d.balance.slice().reverse().map((r) => `<tr><td data-label="Месяц">${r.period}</td><td class="n" data-label="Начало">${fmtMoney(r.opening)}</td><td class="n" data-label="Операционная">${fmtMoney(r.operating)}</td><td class="n" data-label="Инвестиционная">${fmtMoney(r.investing)}</td><td class="n" data-label="Финансовая">${fmtMoney(r.financing)}</td><td class="n" data-label="Конец"><b>${fmtMoney(r.closing)}</b></td></tr>`).join('');
     view.innerHTML = head('Движение денег', 'Все счета и касса обоих юрлиц, в тенге · переводы между своими юрлицами в сумме дают ноль')
-      + `<div class="card"><h2>Остаток на конец месяца</h2>${barChart(pts, { fmt: fmtShort })}</div>`
+      + `<div class="card"><h2>Остаток на конец месяца</h2>${barChart(pts, { fmt: fmtShort, span: 'full' })}</div>`
       + `<div class="card"><div class="scroll-x"><table class="tbl cards"><thead><tr><th>Месяц</th><th class="n">Начало</th><th class="n">Операционная</th><th class="n">Инвестиционная</th><th class="n">Финансовая</th><th class="n">Конец</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
   }
 
@@ -128,7 +129,7 @@
     const [p, qs] = (location.hash || '#/overview').slice(2).split('?');
     const params = new URLSearchParams(qs || '');
     const [name, arg] = p.split('/');
-    nav.innerHTML = AIRL.nav(items, name === 'client' ? 'debtors' : name);
+    { const cur = name === 'client' ? 'debtors' : name; nav.innerHTML = AIRL.nav(items, cur); curNo = Math.max(1, items.findIndex((i) => i.id === cur) + 1); AIRL.revealTab(nav); }
     try {
       if (name === 'pnl') await pnl(params);
       else if (name === 'cash') await cash();
@@ -141,6 +142,7 @@
 
   (async () => {
     try { me = await AIRL.topbar('Финансы', 'finance'); } catch (e) { view.innerHTML = errorBox(e.message); return; }
+    AIRL.caption('Финансы · ОПиУ, движение денег, должники и сверка банка · данные 1С и двух банков');
     if (!['ceo', 'head_finance', 'staff_finance'].includes(me.role)) { view.innerHTML = errorBox('Сервис «Финансы» недоступен для вашей роли'); return; }
     window.addEventListener('hashchange', route); route(); AIRL.registerSW(`${B}/`);
     post('/hub/api/open', { service: 'finance' }).catch(() => {});

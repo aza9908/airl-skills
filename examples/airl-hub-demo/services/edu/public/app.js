@@ -9,7 +9,8 @@
   let me;
   const canEdit = () => ['head_edu', 'staff_edu'].includes(me.role);
   const items = [{ id: 'overview', title: 'Обзор', href: '#/overview' }, { id: 'cohorts', title: 'Потоки', href: '#/cohorts' }];
-  const head = (t, sub, right = '') => `<div class="page-head"><div><h1>${esc(t)}</h1><div class="sub">${esc(sub || '')}</div></div><span class="spacer"></span>${right}</div>`;
+  let curNo = 1;
+  const head = (t, sub, right = '') => AIRL.head(curNo, t, sub, right);
   const REASON = { absences: 'пропуски', no_homework: 'нет домашних работ', payment: 'оплата', personal: 'личные причины', other: 'другое' };
   const LEVEL = { risk: ['danger', 'риск отсева'], watch: ['warning', 'наблюдаем'], resolved: ['ok', 'решено'] };
 
@@ -28,7 +29,7 @@
     view.innerHTML = head('Обучение', 'Курс VibeOps · текущий месяц с 1-го по вчера · цифры из metrics')
       + `<div class="kpis">${d.kpis.map((k) => kpiCard({ ...k, id: k.metric_id }, { sub: `было ${fmtValue(k.prev_value, k.unit)}` })).join('')}</div>`
       + `<div class="grid2"><div class="card"><h2>Записи на курс по месяцам</h2>${barChart(d.series.map((s, i) => ({ label: s.label, value: s.value, cls: i === d.series.length - 1 ? 'cur' : '' })), { fmt: (v) => String(Math.round(v)) })}</div>
-         <div class="card"><h2>${esc(d.scope)} <span class="sub">· последние 9 месяцев и будущие</span></h2>${cohortTable(d.cohorts.slice(0, 6))}<p><a href="#/cohorts">Все потоки →</a></p></div></div>`;
+         <div class="card"><h2>${esc(d.scope)} <span class="sub">последние 9 месяцев и будущие</span></h2>${cohortTable(d.cohorts.slice(0, 6))}<p><a href="#/cohorts">Все потоки →</a></p></div></div>`;
   }
 
   async function cohort(code) {
@@ -61,7 +62,7 @@
 
   async function route() {
     const [name, arg] = (location.hash || '#/overview').slice(2).split('?')[0].split('/');
-    nav.innerHTML = AIRL.nav(items, name === 'cohort' ? 'cohorts' : name);
+    { const cur = name === 'cohort' ? 'cohorts' : name; nav.innerHTML = AIRL.nav(items, cur); curNo = Math.max(1, items.findIndex((i) => i.id === cur) + 1); AIRL.revealTab(nav); }
     try {
       if (name === 'cohort' && arg) await cohort(arg); else if (name === 'cohorts') await overview(true); else await overview(false);
     } catch (e) { view.innerHTML = errorBox(e.status === 404 ? 'Поток не найден или недоступен' : `Не удалось загрузить данные: ${e.message}`); }
@@ -69,6 +70,7 @@
 
   (async () => {
     try { me = await AIRL.topbar('Обучение', 'edu'); } catch (e) { view.innerHTML = errorBox(e.message); return; }
+    AIRL.caption('Обучение · потоки курса VibeOps, слушатели и риск отсева');
     if (!['ceo', 'head_edu', 'staff_edu'].includes(me.role)) { view.innerHTML = errorBox('Сервис «Обучение» недоступен для вашей роли'); return; }
     window.addEventListener('hashchange', route); route(); AIRL.registerSW(`${B}/`);
     post('/hub/api/open', { service: 'edu' }).catch(() => {});

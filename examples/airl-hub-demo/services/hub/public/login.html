@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#16161a">
-  <title>Вход — хаб AIRL (демо)</title>
+  <title>AIRL · 1С Hub — вход (демо)</title>
   <link rel="icon" href="/assets/star-mark.svg" type="image/svg+xml">
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="stylesheet" href="/assets/airl-tokens.css">
@@ -13,22 +13,23 @@
 </head>
 <body class="login-page">
   <header class="topbar login-top">
-    <a class="logo" href="/login" aria-label="AIRL"><img src="/assets/logo-airl-white.png" alt="AIRL" width="69" height="22"></a>
+    <a class="logo" href="/login" aria-label="AI Research Labs"><img src="/assets/logo-airl-white.png" alt="AI Research Labs" width="106" height="34"></a>
+    <span class="divider" aria-hidden="true"></span>
+    <span class="product">1С Hub</span>
     <span class="spacer"></span>
-    <span class="mono tag">hub · демо</span>
+    <span class="tag">демо</span>
   </header>
   <main class="login-wrap">
     <form class="login-card" id="login-form" autocomplete="on" novalidate>
-      <img class="star" src="/assets/star-mark.svg" alt="" width="56" height="56">
-      <h1>Хаб руководителя</h1>
-      <p class="muted">AI Research Labs · Алматы. Демо на синтетических данных, похожих на выгрузки 1С.</p>
+      <h1 class="brand">1С<img src="/assets/star-mark.svg" alt="" width="56" height="56">Hub</h1>
+      <p class="sub">Хаб руководителя AIRL: финансы, продажи и обучение в одном окне. Демо на синтетических данных в форме выгрузок 1С.</p>
       <label for="login">Логин</label>
       <input id="login" name="login" autocomplete="username" required autocapitalize="off" spellcheck="false" placeholder="например, ceo">
       <label for="password">Пароль</label>
       <input id="password" name="password" type="password" autocomplete="current-password" required>
       <p class="error" id="err" role="alert" hidden></p>
-      <button class="btn" type="submit" id="submit">Войти</button>
-      <p class="mono hint">Пароль демо-пользователей задаётся при первом запуске (DEMO_PASSWORD) — его выдаёт команда AIRL.</p>
+      <button class="btn" type="submit" id="submit">Войти <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 17 17 7M8 7h9v9"/></svg></button>
+      <p class="hint">Пароль демо-пользователей задаётся при первом запуске (DEMO_PASSWORD) — его выдаёт команда AIRL.</p>
     </form>
   </main>
   <script src="/login.js"></script>
