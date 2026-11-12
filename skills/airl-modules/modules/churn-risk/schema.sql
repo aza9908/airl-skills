@@ -234,7 +234,7 @@ FROM s;
 
 -- Очередь уведомлений: клиент стал «под риском» (раз в месяц на клиента и статус),
 -- просрочен следующий шаг. Повторный вызов не создаёт дублей (dedup_key).
-CREATE OR REPLACE FUNCTION churn_queue_notifications() RETURNS int LANGUAGE plpgsql AS $$
+CREATE OR REPLACE FUNCTION churn_queue_notifications() RETURNS int LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
 DECLARE
     v_channel text := airl_setting('churn-risk', 'channel', '"telegram"') #>> '{}';
     v_n int; v_total int := 0;

@@ -525,7 +525,7 @@ BEGIN
     INSERT INTO airl_notifications (dedup_key, module, channel, recipient, text)
     SELECT 'demand-forecast:suggestion:' || p.run_no || ':' || p.material_code || ':' || v_buyer, 'demand-forecast',
            v_channel, v_buyer,
-           'Прогноз ' || p.run_no || ': заказать ' || p.title || ' ' || to_char(p.suggest_qty, 'FM999G999G990') || ' ' || p.unit
+           'Прогноз ' || p.run_no || ': заказать ' || p.title || ' ' || replace(to_char(p.suggest_qty, 'FM999,999,990'), ',', ' ') || ' ' || p.unit
            || ' (срок поставки ' || p.lead_time_weeks || ' нед.)'
            || CASE WHEN p.uses_low_history THEN '. Есть товары с малой историей — проверьте вручную' ELSE '' END
     FROM v_fc_purchase p

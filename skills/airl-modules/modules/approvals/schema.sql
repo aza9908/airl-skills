@@ -140,7 +140,7 @@ DROP TRIGGER IF EXISTS appr_steps_touch ON appr_steps;
 CREATE TRIGGER appr_steps_touch BEFORE UPDATE ON appr_steps FOR EACH ROW EXECUTE FUNCTION airl_touch();
 
 -- Разрешённые переходы статуса заявки (схема в MODULE.md) и запись в журнал.
-CREATE OR REPLACE FUNCTION appr_requests_status_guard() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE OR REPLACE FUNCTION appr_requests_status_guard() RETURNS trigger LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
 BEGIN
     IF NEW.status IS DISTINCT FROM OLD.status THEN
         IF (OLD.status, NEW.status) NOT IN (
@@ -325,7 +325,7 @@ GROUP BY period;
 -- Отправка заявки на согласование (из черновика или после возврата):
 -- фиксирует правило, создаёт шаги нового круга. Права проверяет сервер до вызова.
 CREATE OR REPLACE FUNCTION appr_submit(p_request_id bigint, p_actor text) RETURNS int
-LANGUAGE plpgsql AS $$
+LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
 DECLARE
     v_req   appr_requests%ROWTYPE;
     v_rule  bigint;
@@ -355,7 +355,7 @@ END $$;
 -- Решение по текущему шагу: approved | rejected | returned. Роль согласующего
 -- проверяет сервер; функция не даёт автору согласовать свою же заявку.
 CREATE OR REPLACE FUNCTION appr_decide(p_step_id bigint, p_decision text, p_actor text, p_comment text)
-RETURNS text LANGUAGE plpgsql AS $$
+RETURNS text LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
 DECLARE
     v_step appr_steps%ROWTYPE;
     v_req  appr_requests%ROWTYPE;
@@ -398,7 +398,7 @@ END $$;
 
 -- Очередь уведомлений: новый шаг, напоминание о зависшем шаге, итог заявителю.
 -- Повторный вызов не создаёт дублей (dedup_key). Получатель — пользователь или 'role:<роль>'.
-CREATE OR REPLACE FUNCTION appr_queue_notifications() RETURNS int LANGUAGE plpgsql AS $$
+CREATE OR REPLACE FUNCTION appr_queue_notifications() RETURNS int LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
 DECLARE
     v_channel text := airl_setting('approvals', 'channel', '"telegram"') #>> '{}';
     v_remind  int  := (airl_setting('approvals', 'remind_hours', '24'))::text::int;
@@ -407,7 +407,7 @@ BEGIN
     INSERT INTO airl_notifications (dedup_key, module, channel, recipient, text)
     SELECT 'approvals:step:' || i.step_id || ':' || rcp, 'approvals', v_channel, rcp,
            'Заявка ' || i.request_no || ' ждёт вашего решения: ' || i.purpose || ', '
-           || to_char(i.amount, 'FM999G999G999G990D00') || ' ' || i.currency
+           || replace(replace(to_char(i.amount, 'FM999,999,999,990.00'), ',', ' '), '.', ',') || ' ' || i.currency
     FROM v_appr_inbox i, LATERAL (SELECT COALESCE(i.approver_user_id, 'role:' || i.approver_role) AS rcp) x
     ON CONFLICT (dedup_key) DO NOTHING;
     GET DIAGNOSTICS v_n = ROW_COUNT; v_total := v_total + v_n;

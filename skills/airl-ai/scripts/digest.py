@@ -42,6 +42,8 @@ SYSTEM = """Ты пишешь сводку ({period}) для руководит�
 
 
 REQUIRED_COLUMNS = ["metric_id", "period", "value", "unit", "status"]
+# Необязательно: сравнение из источника (metrics.kpi_period — те же дни прошлого периода).
+OPTIONAL_COLUMNS = ["compare_value", "compare_period"]
 
 HEADERS = {
     "русский": ("сводка", "за", "изменение", "к", "Сводка без ИИ"),
@@ -52,28 +54,43 @@ HEADERS = {
 }
 
 
-def collect(conf, conn):
+def collect(conf, conn, today=None):
     facts = []
     for src in conf["sources"]:
         with conn.cursor() as cur:
             cur.execute(src["sql"])
             cols = [c.name for c in cur.description]
-            if cols != REQUIRED_COLUMNS:
+            if cols[:5] != REQUIRED_COLUMNS or any(c not in OPTIONAL_COLUMNS for c in cols[5:]):
                 raise SystemExit(f"Источник «{src['name']}» возвращает колонки {cols}. Сводка читает только "
-                                 f"показатели с колонками {REQUIRED_COLUMNS} — представления m_<…> или схему metrics.")
+                                 f"показатели с колонками {REQUIRED_COLUMNS} (+ {OPTIONAL_COLUMNS}) — представления m_<…> "
+                                 f"или metrics.kpi_period.")
             rows = [dict(zip(cols, r)) for r in cur.fetchmany(50)]
         by_metric = {}
         for r in rows:
             by_metric.setdefault(r["metric_id"], []).append(r)
         for metric_id, items in by_metric.items():
             items.sort(key=lambda r: str(r["period"]), reverse=True)
-            facts.append(make_fact(conf, src["name"], items))
+            facts.append(make_fact(conf, src["name"], items, today=today))
     return facts
 
 
-def make_fact(conf, source, items):
+def make_fact(conf, source, items, today=None):
+    """Факт для сводки. Сравнение — только сопоставимое:
+
+    * строка с compare_value (например, из metrics.kpi_period) — сравниваем с ним:
+      это те же дни прошлого периода;
+    * иначе — с предыдущей строкой, но не для неполного текущего месяца (period =
+      текущий ГГГГ-ММ): «1–11 ноября» против целого октября дало бы ложное падение.
+    Для показателей в % разница пишется в процентных пунктах (п.п.).
+    """
     cur = ai.to_jsonable(items[0])
-    prev = ai.to_jsonable(items[1]) if len(items) > 1 else None
+    if cur.get("compare_value") is not None:
+        prev = {"value": cur["compare_value"],
+                "period": cur.get("compare_period") or "те же дни прошлого периода"}
+    elif today is not None and str(cur.get("period")) == today.strftime("%Y-%m"):
+        prev = None
+    else:
+        prev = ai.to_jsonable(items[1]) if len(items) > 1 else None
     title = conf.get("titles", {}).get(cur["metric_id"], cur["metric_id"])
     unit = cur.get("unit") or ""
     fact = {"source": source, "metric_id": cur["metric_id"], "title": title,
@@ -84,7 +101,9 @@ def make_fact(conf, source, items):
         change = round(float(cur["value"]) - float(prev["value"]), 2)
         fact.update(previous_period=str(prev["period"]), previous_value=prev["value"],
                     previous_display=ai.fmt_number(prev["value"], unit),
-                    change=change, change_display=("+" if change > 0 else "") + ai.fmt_number(change, unit))
+                    change=change,
+                    change_display=("+" if change > 0 else "") + (ai.fmt_number(change, "") + " п.п." if unit == "%"
+                                                                 else ai.fmt_number(change, unit)))
         if float(prev["value"]) != 0:
             pct = round(100 * change / abs(float(prev["value"])), 1)
             fact.update(change_pct=pct, change_pct_display=("+" if pct > 0 else "") + ai.fmt_number(pct, "%"))
@@ -163,7 +182,7 @@ def main():
             print("Задайте AI_READER_DATABASE_URL (пользователь только на чтение)", file=sys.stderr)
             return 2
         with ai.connect_readonly(dsn) as conn:
-            facts = collect(conf, conn)
+            facts = collect(conf, conn, today)
     if not facts:
         print("Нет фактов: проверьте запросы в конфигурации", file=sys.stderr)
         return 1
@@ -171,7 +190,19 @@ def main():
     if a.dry_run:
         text, how = template_digest(conf, facts, today), "шаблон (без модели)"
     else:
-        text, problem = write_with_model(ai.make_client(), conf, facts, today)
+        problem = None
+        if not os.environ.get("ANTHROPIC_API_KEY"):
+            text, problem = None, "нет ключа модели"
+        else:
+            try:
+                client = ai.make_client()
+            except ImportError:
+                text, problem = None, "не установлен пакет anthropic"
+            else:
+                try:
+                    text, problem = write_with_model(client, conf, facts, today)
+                except Exception as e:  # noqa: BLE001 — сеть, лимит, ключ: честная сводка без ИИ
+                    text, problem = None, f"модель недоступна ({type(e).__name__})"
         if text is None:
             text = template_digest(conf, facts, today, note=problem)
             how = "шаблон (" + problem + ")"

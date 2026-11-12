@@ -86,7 +86,11 @@ if [ ${#MODULES[@]} -gt 1 ]; then
         echo "✖ все вместе: $schema.$v не читается из другой схемы"; bad=1
       fi
     done
-    [ $bad -eq 0 ] && echo "✔ все вместе: ${#MODULES[@]} модулей в одной схеме, $n показателей читаются из другой схемы" || fail=1
+    # Функции модулей вызываются из сервиса с другим search_path: каждая должна быть
+    # привязана к своей схеме (SET search_path FROM CURRENT).
+    loose=$(psql "$DATABASE_URL" -X -At -c "SELECT string_agg(p.proname, ', ' ORDER BY p.proname) FROM pg_proc p WHERE p.pronamespace = '$schema'::regnamespace AND NOT EXISTS (SELECT 1 FROM unnest(coalesce(p.proconfig, '{}')) c WHERE c LIKE 'search_path=%')")
+    if [ -n "$loose" ]; then echo "✖ все вместе: функции без SET search_path FROM CURRENT: $loose"; bad=1; fi
+    [ $bad -eq 0 ] && echo "✔ все вместе: ${#MODULES[@]} модулей в одной схеме, $n показателей читаются из другой схемы, у всех функций свой search_path" || fail=1
   fi
   psql "$DATABASE_URL" -q -X -c "DROP SCHEMA IF EXISTS $schema CASCADE;" >/dev/null
 fi

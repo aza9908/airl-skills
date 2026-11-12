@@ -47,7 +47,7 @@ DROP TRIGGER IF EXISTS rcv_promises_touch ON rcv_promises;
 CREATE TRIGGER rcv_promises_touch BEFORE UPDATE ON rcv_promises FOR EACH ROW EXECUTE FUNCTION airl_touch();
 
 -- Долг клиента в момент обещания: остаток по документам, выписанным не позже даты обещания.
-CREATE OR REPLACE FUNCTION rcv_promises_fill() RETURNS trigger LANGUAGE plpgsql AS $$
+CREATE OR REPLACE FUNCTION rcv_promises_fill() RETURNS trigger LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
 BEGIN
     IF NEW.balance_at_promise IS NULL THEN
         SELECT COALESCE(sum(d.amount - d.paid_amount), 0) INTO NEW.balance_at_promise
@@ -261,7 +261,7 @@ FROM s;
 
 -- Очередь уведомлений: нарушенное обещание, превышение лимита, новый долг 90+.
 -- Повторный вызов не создаёт дублей (dedup_key).
-CREATE OR REPLACE FUNCTION rcv_queue_notifications() RETURNS int LANGUAGE plpgsql AS $$
+CREATE OR REPLACE FUNCTION rcv_queue_notifications() RETURNS int LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
 DECLARE
     v_channel text := airl_setting('receivables', 'channel', '"telegram"') #>> '{}';
     v_fin     text := airl_setting('receivables', 'finance_recipient', '"role:fin_director"') #>> '{}';
