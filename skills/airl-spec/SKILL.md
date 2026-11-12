@@ -230,7 +230,15 @@ D) Свой вариант
 | Страна (читать всегда, вместе с файлом режима) | `references/country.md` | раздел «Страна и закон», ключи `country`, `currency` |
 | D. Схемы · и в конце режимов S, A, B | `references/diagrams.md` | блок-схемы Mermaid в `ARCHITECTURE.md` / `COMPANY_MAP.md`, `docs/diagrams.html` для показа |
 | P. Полный PRD и бэклог | `references/prd-pipeline.md` (шаблоны — `references/prd-templates.md`, перед шагом 22) | `PRD_CONTEXT.md`, `PRD_FINAL.md`, `BACKLOG.md`, `backlog.csv` |
-| C1–C3. Апгрейд | `references/upgrade.md` (шаблон `SPEC.md` — в `references/service-spec.md` или `references/solo-product.md`) | обновлённые документы и список правок в коде |
+| C1–C3. Апгрейд | `references/upgrade.md` (шаблон `SPEC.md` — `templates/SPEC.md` или `templates/SPEC.hub.md`) | обновлённые документы и список правок в коде |
+| Изменение объёма после подписи | `references/scope.md`, раздел «Если клиент меняет объём» | `SCOPE_CHANGE.md` с подписью |
+
+**Шаблоны документов** лежат в `${CLAUDE_SKILL_DIR}/templates/`: `SPEC.md` (свой продукт),
+`SPEC.hub.md` (сервис отдела, сохраняется как `SPEC.md`), `ARCHITECTURE.md`,
+`ARCHITECTURE.hub.md`, `airl.service.json`, `COMPANY_MAP.md`, `SCOPE.md`,
+`SCOPE_CHANGE.md`. Копируй шаблон в проект и заполняй — не пиши документ по памяти:
+строки-маркеры («Цена боли», «Метрика успеха», `- [ ]` в разделе 10, `# airl-context`
+и `mode:`) читают следующие навыки и `/airl-progress`.
 
 ---
 

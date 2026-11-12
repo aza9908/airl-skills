@@ -221,42 +221,9 @@ SQL
 В хабе этот скрипт не нужен: базу хранилища и пользователей `svc_<отдел>` ведёт
 команда AIRL через `/airl-dwh`, сервис получает только свой `DATABASE_URL`.
 
-Каркас `docker-compose.yml` — подставь реальные сервисы проекта:
+Каркас `docker-compose.yml` — `templates/docker-compose.yml` в папке навыка: скопируй
+в `/srv/<проект>/` (и в `infra/` репозитория) и подставь реальные сервисы проекта.
 
-```yaml
-services:
-  app:
-    image: ghcr.io/<владелец строчными>/<репозиторий строчными>:${APP_TAG}
-    restart: unless-stopped
-    env_file: .env.app
-    ports:
-      - "127.0.0.1:${APP_PORT}:${APP_PORT}"
-    depends_on:
-      db:
-        condition: service_healthy
-    networks: [web, internal]
-
-  db:
-    image: postgres:16
-    restart: unless-stopped
-    env_file: .env.db
-    volumes:
-      - db_data:/var/lib/postgresql/data
-      - ./initdb:/docker-entrypoint-initdb.d:ro
-    networks: [internal]
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
-      interval: 10s
-      retries: 5
-
-volumes:
-  db_data:
-
-networks:
-  web:
-    external: true
-  internal:
-```
 
 Обязательно: у базы **именованный том** (иначе данные исчезнут при пересоздании
 контейнера), у базы **нет** раздела `ports`, у каждого сервиса `restart: unless-stopped`

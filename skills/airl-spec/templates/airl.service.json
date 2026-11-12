@@ -1,0 +1,28 @@
+{
+  "$schema": "airl.service/v1",
+  "$comment": "Контракт сервиса отдела для хаба. Пишет /airl-spec, режим B. Читают /airl-pwa, /airl-cybersecurity, /airl-modules, /airl-hub (scripts/check_service.py) и /airl-progress. Замени всё в [...]. id = id отдела в разделе 6 карты; base_path = /<id>; hub.health и hub.summary начинаются с /<id>/; hub.metrics — 2–4 id из раздела 4 карты; data.writes — только mart_<отдел>; data.reads — только core.* и metrics.*; reads_shared — чужие витрины с разрешением в карте; public_paths — вебхуки ботов, иначе []. Ключ $comment можно оставить.",
+  "id": "[id отдела]",
+  "title": "[Название сервиса]",
+  "department": "[id отдела]",
+  "map_version": "[версия карты, например 1.0]",
+  "spec_version": "1.0",
+  "version": "0.1.0",
+  "owner": "[руководитель отдела]",
+  "base_path": "/[id отдела]",
+  "roles": {
+    "view": ["ceo", "head_[id отдела]", "staff_[id отдела]"],
+    "edit": ["head_[id отдела]", "staff_[id отдела]"]
+  },
+  "data": {
+    "reads": ["core.[таблица]", "metrics.[id показателя]"],
+    "reads_shared": [],
+    "writes": ["mart_[id отдела]"]
+  },
+  "public_paths": [],
+  "hub": {
+    "health": "/[id отдела]/healthz",
+    "summary": "/[id отдела]/api/hub/summary",
+    "metrics": ["[id показателя 1]", "[id показателя 2]"]
+  },
+  "pii": ["[поле с персональными данными]"]
+}

@@ -1,0 +1,37 @@
+# Каркас docker-compose.yml для своего продукта. Пишет /airl-devops, часть 3.
+# Лежит на сервере в /srv/<проект>/ рядом с файлами .env, .env.db, .env.app (права 600).
+# Подставь владельца и репозиторий строчными. У базы — именованный том и нет раздела ports;
+# порт приложения открыт только на 127.0.0.1; образ с меткой коммита, не latest.
+# В хабе этот файл другой: сервис отдела без своей базы — см. references/server-setup.md, «В хабе».
+services:
+  app:
+    image: ghcr.io/<владелец строчными>/<репозиторий строчными>:${APP_TAG}
+    restart: unless-stopped
+    env_file: .env.app
+    ports:
+      - "127.0.0.1:${APP_PORT}:${APP_PORT}"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [web, internal]
+
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    env_file: .env.db
+    volumes:
+      - db_data:/var/lib/postgresql/data
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+    networks: [internal]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      retries: 5
+
+volumes:
+  db_data:
+
+networks:
+  web:
+    external: true
+  internal:
