@@ -1,13 +1,15 @@
-.login-top { margin: 12px auto 0; max-width: 960px; }
-.login-top .tag { font-size: 12px; opacity: .8; padding-right: 12px; }
-.login-wrap { display: grid; place-items: center; min-height: calc(100vh - 100px); padding: 24px 16px; }
-.login-card {
-  width: min(420px, 100%); background: var(--airl-color-surface); border-radius: 30px; padding: 30px 26px;
-  box-shadow: var(--airl-shadow); display: flex; flex-direction: column;
-}
-.login-card .star { align-self: center; margin-bottom: 8px; }
-.login-card h1 { text-align: center; font-size: 26px; margin: 4px 0 6px; letter-spacing: -.01em; }
-.login-card .muted { text-align: center; margin: 0 0 12px; font-size: 14px; }
-.login-card .btn { margin-top: 18px; width: 100%; min-height: 52px; font-size: 16px; }
-.login-card .error { color: var(--airl-color-danger); font-size: 14px; margin: 10px 0 0; }
-.login-card .hint { font-size: 11.5px; color: var(--airl-color-muted); margin: 16px 0 0; text-align: center; }
+/* Вход в стиле airl.kz/airl-1c-hub: тёмная шапка, крупный «1С✦Hub», поля 52px со скруглением 26px. */
+.login-page { display: flex; flex-direction: column; }
+.login-top { max-width: 1204px; padding: 0 12px 0 14px; }
+.login-top .tag { font: 13px var(--airl-font-mono); color: var(--airl-color-on-dark); border: 1px solid rgba(255, 255, 255, .33); border-radius: 24px; padding: 9px 16px; }
+.login-wrap { flex: 1; display: flex; align-items: center; justify-content: center; padding: 24px 16px 72px; min-height: calc(100vh - 120px); }
+.login-card { width: 100%; max-width: 420px; display: flex; flex-direction: column; }
+.login-card .brand { font-size: clamp(48px, 9vw, 64px); letter-spacing: -.045em; }
+.login-card .sub { font: 15px/1.5 var(--airl-font-mono); color: var(--airl-color-muted-2); margin: 18px 0 30px; }
+.login-card label { margin: 0 0 8px 18px; }
+.login-card input { margin-bottom: 18px; }
+.login-card .btn { margin-top: 6px; width: 100%; min-height: 52px; font-size: 17px; gap: 10px; }
+.login-card .btn svg { width: 18px; height: 18px; }
+.login-card .error { background: #fff; border: 1px solid #e9b8c9; color: #a3274f; border-radius: 18px; padding: 12px 18px; font-size: 14px; margin: 0 0 18px; }
+.login-card .hint { font: 12px/1.5 var(--airl-font-mono); color: var(--airl-color-muted-2); margin: 22px 0 0; text-align: center; }
+@media (max-width: 640px) { .login-top .tag { display: none; } }

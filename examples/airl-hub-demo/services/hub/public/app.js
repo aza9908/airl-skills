@@ -1,169 +1,245 @@
 'use strict';
-/* Экран руководителя хаба AIRL. Все цифры — из /hub/api/* (схема metrics) и /<id>/api/hub/summary.
-   В браузере ничего не пересчитывается: только форматирование и раскладка. */
+/* Экран руководителя хаба AIRL в стиле «1С Hub». Все цифры — из /hub/api/* (схема metrics)
+   и /<id>/api/hub/summary. В браузере ничего не пересчитывается: только форматирование и раскладка.
+   Одна длинная страница с разделами; вкладки в белой «таблетке» прокручивают к разделу. */
 (() => {
-  const { esc, api, post, fmtValue, fmtMoney, fmtShort, fmtTime, kpiCard, barChart, hbars, loading, errorBox, empty } = AIRL;
+  const { esc, api, post, fmtValue, fmtMoney, fmtShort, fmtTime, fmtBig, kpiCard, statCard, groupedBars, barChart, areaChart, donut, hbars, errorBox, empty, pad2 } = AIRL;
   const view = document.getElementById('view');
   const navEl = document.getElementById('nav');
   const GRAINS = [['day', 'День'], ['week', 'Неделя'], ['month', 'Месяц'], ['quarter', 'Квартал']];
+  const GRAIN_N = { day: '30 дней', week: '13 недель', month: '18 месяцев', quarter: '6 кварталов' };
   const LOWER_BETTER = new Set(['receivables_overdue']);
-  const DEPT_TITLE = { finance: 'Финансы', sales: 'Продажи', edu: 'Обучение', ceo: 'Компания' };
+  const STATUS_PILL = { ok: ['ok', 'Остаток: в норме'], warning: ['warning', 'Остаток: внимание'], danger: ['rose', 'Остаток: ниже нормы'] };
   let grain = 'month';
   try { grain = localStorage.getItem('hub.grain') || 'month'; } catch { /* приватный режим */ }
   let me = null;
+  let tabs = [];
 
   const seg = () => `<div class="seg" role="group" aria-label="Период">${GRAINS.map(([g, t]) =>
     `<button type="button" data-grain="${g}" aria-pressed="${g === grain}">${t}</button>`).join('')}</div>`;
+  const secHead = (no, title, sub, right = '') => `<div class="sec-head"><span class="no">${pad2(no)}</span><div><h2>${esc(title)}</h2><div class="sub">${esc(sub)}</div></div>${right ? `<div class="right">${right}</div>` : '<span></span>'}</div>`;
+  const dmy = (iso) => (/^\d{4}-\d{2}-\d{2}/.test(String(iso)) ? String(iso).slice(0, 10).split('-').reverse().join('.') : String(iso || ''));
+  const card = (id, title, sub, body, cls = '') => `<div class="card ${cls}"${id ? ` id="${id}"` : ''}><h2>${esc(title)}${sub ? `<span class="sub">${esc(sub)}</span>` : ''}</h2>${body}</div>`;
+  const kpiOf = (kpis, id) => kpis.find((k) => k.metric_id === id);
+  const kpi = (k, sub) => (k ? kpiCard({ ...k, id: k.metric_id }, { lowerIsBetter: LOWER_BETTER.has(k.metric_id), sub: sub ?? `было ${fmtValue(k.prev_value, k.unit)}` }) : '');
 
-  function head(title, sub) {
-    return `<div class="page-head"><div><h1>${esc(title)}</h1><div class="sub" id="asof">${esc(sub || '')}</div></div><span class="spacer"></span>${seg()}</div>`;
+  // ---------- 01 Обзор ----------
+  function heroCard(k, cash) {
+    const [pc, pt] = STATUS_PILL[k.status] || STATUS_PILL.ok;
+    const pts = (cash ? cash.points : []).map((p) => ({ label: p.label, value: p.value, title: fmtMoney(p.value) }));
+    return `<div class="kpi hero ${esc(k.status)}" data-metric="cash_balance">
+      <div class="l"><span>Деньги на счетах</span><span class="pill ${pc}">${esc(pt)}</span></div>
+      <div class="v${Number(k.value) < 0 ? ' neg' : ''}${AIRL.lenCls(k.value, k.unit)}" data-value="${esc(k.value)}">${fmtBig(k.value, k.unit)}</div>
+      <div class="asof">на ${esc(k.cur_to ? dmy(k.cur_to) : k.period)} · все счета и касса</div>
+      <div class="subs"><div><div class="t">Прошлый период</div><div class="n">${fmtBig(k.prev_value, k.unit)}</div></div>
+        <div><div class="t">Изменение</div><div class="n">${AIRL.delta(k.value, k.prev_value, { unit: k.unit })}</div></div></div>
+      ${pts.length > 1 ? areaChart(pts, { dark: true, height: 200 }) : ''}</div>`;
   }
 
-  function bindSeg(render) {
-    view.querySelectorAll('[data-grain]').forEach((b) => b.addEventListener('click', () => {
-      grain = b.dataset.grain;
-      try { localStorage.setItem('hub.grain', grain); } catch { /* ничего */ }
-      render();
-    }));
-  }
-
-  const ORDER = ['revenue', 'gross_margin', 'net_profit', 'cash_balance', 'receivables_overdue', 'lead', 'conversion_lead_to_deal', 'avg_check',
-    'enrollments', 'cohort_fill_rate', 'course_completion_rate', 'headcount'];
-  const sortK = (a) => a.slice().sort((x, y) => ORDER.indexOf(x.metric_id) - ORDER.indexOf(y.metric_id));
-  const kpiBlock = (kpis) => `<div class="kpis">${sortK(kpis).map((k) => kpiCard({ ...k, id: k.metric_id },
-    { lowerIsBetter: LOWER_BETTER.has(k.metric_id), sub: `было ${fmtValue(k.prev_value, k.unit)} · ${DEPT_TITLE[k.department] || ''}` })).join('')}</div>`;
-
-  function seriesCard(title, s, unit) {
-    const pts = s.points.map((p, i) => ({ label: p.label, value: p.value, cls: i === s.points.length - 1 ? 'cur' : '', title: fmtValue(p.value, unit) }));
-    const fmt = unit === 'KZT' ? fmtShort : (v) => fmtValue(v, unit);
-    return `<div class="card"><h2>${esc(title)} <span class="sub">· ${esc({ day: '30 дней', week: '13 недель', month: '18 месяцев', quarter: '6 кварталов' }[s.grain])} · последний период — неполный, по вчера</span></h2>${barChart(pts, { fmt })}</div>`;
-  }
-
-  function pnlCard(p) {
-    const rows = p.lines.map((l) => {
-      const cls = l.kind === 'margin' ? (l.line_code === 'gross_profit' ? 'is-margin' : 'is-margin') : l.kind === 'net' ? 'is-net' : l.kind === 'total' ? 'is-section' : 'is-sub';
-      const d = l.prev === null || l.prev === 0 ? '—' : `${(((l.amount - l.prev) / Math.abs(l.prev)) * 100).toFixed(1).replace('.', ',')}%`;
-      return `<tr class="${cls}"><td data-label="Строка">${esc(l.title)}</td><td class="n ${l.amount < 0 ? 'neg' : ''}" data-label="Период">${fmtMoney(l.amount)}</td><td class="n" data-label="Прошлый">${fmtMoney(l.prev)}</td><td class="n" data-label="Изм.">${d}</td></tr>`;
-    }).join('');
-    return `<div class="card" id="pnl"><h2>ОПиУ компании <span class="sub">· ${esc(p.period)} · без внутригрупповых оборотов · текущий месяц предварительный</span></h2>
-      <div class="scroll-x"><table class="tbl cards"><thead><tr><th>Строка</th><th class="n">Период</th><th class="n">Прошлый</th><th class="n">Изм.</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
-  }
-
-  function agingCard(a) {
-    const cls = ['', '', 'warning', 'danger', 'danger'];
-    const rows = a.buckets.map((b) => ({ label: b.bucket, value: b.amount, cls: cls[b.ord] || '' }));
-    return `<div class="card" id="aging"><h2>Дебиторка по срокам <span class="sub">· на конец вчерашнего дня · с НДС</span></h2>${rows.length ? hbars(rows) : empty('Долгов нет')}
-      <p class="muted">Документов с остатком: ${a.buckets.reduce((s, b) => s + Number(b.docs), 0)}. Подробно — в сервисе «Финансы» → «Должники».</p></div>`;
-  }
-
-  function funnelCard(f) {
-    const rows = f.channels.map((c) => `<tr><td data-label="Канал">${esc(c.channel)}</td><td class="n" data-label="Заявки">${c.leads}</td><td class="n" data-label="В работе">${c.open}</td><td class="n" data-label="Отказ">${c.lost}</td><td class="n" data-label="Оплата">${c.won}</td></tr>`).join('');
-    const tot = f.channels.reduce((s, c) => ({ leads: s.leads + Number(c.leads), won: s.won + Number(c.won) }), { leads: 0, won: 0 });
-    return `<div class="card" id="funnel"><h2>Заявки по каналам <span class="sub">· ${esc(f.period)} · без дублей (30 дней) · «Оплата» — заявки этого периода, уже оплаченные</span></h2>
-      ${f.channels.length ? `<table class="tbl cards"><thead><tr><th>Канал</th><th class="n">Заявки</th><th class="n">В работе</th><th class="n">Отказ</th><th class="n">Оплата</th></tr></thead><tbody>${rows}</tbody>
-      <tfoot><tr class="is-section"><td>Итого</td><td class="n">${tot.leads}</td><td></td><td></td><td class="n">${tot.won}</td></tr></tfoot></table>` : empty('Заявок за период нет')}</div>`;
-  }
-
-  function forecastCard(f, tiles) {
-    const sales = (tiles || []).find((t) => t.id === 'sales' && t.ok);
+  function overviewSec(no, ov, x) {
+    const k = ov.kpis; const fin = ov.departments.includes('finance');
+    const cash = kpiOf(k, 'cash_balance');
+    let g1; let g1t;
+    if (fin) { g1t = 'Результат за период'; g1 = ['revenue', 'net_profit', 'gross_margin', 'headcount'].map((id) => kpi(kpiOf(k, id))).join(''); }
+    else { g1t = `Показатели отдела «${{ sales: 'Продажи', edu: 'Обучение' }[ov.departments[0]] || ''}»`; g1 = k.map((m) => kpi(m)).join(''); }
+    const sales = (x.tiles.tiles || []).find((t) => t.id === 'sales' && t.ok);
     const plan = sales && (sales.metrics || []).find((m) => m.id === 'plan_completion:revenue');
-    return `<div class="card" id="forecast"><h2>Прогноз месяца <span class="sub">· оценка по темпу, не план</span></h2>
-      <div class="kpis">
-        <div class="kpi"><div class="l">Выручка с 1-го числа</div><div class="v">${fmtMoney(f.fact)}</div><div class="s">${f.days_passed} из ${f.days_total} дней</div></div>
-        <div class="kpi"><div class="l">Прогноз на конец месяца</div><div class="v">${fmtMoney(f.forecast)}</div><div class="s">тот же месяц год назад: ${fmtMoney(f.last_year)}</div></div>
-        ${plan ? `<div class="kpi ${esc(plan.status)}"><div class="l">Выполнение плана выручки</div><div class="v">${fmtValue(plan.value, '%')}</div><div class="s">из сервиса «Продажи» (модуль план-факт)</div></div>` : ''}
-      </div></div>`;
+    const g2 = (fin ? kpi(kpiOf(k, 'receivables_overdue'), `было ${fmtValue(kpiOf(k, 'receivables_overdue')?.prev_value, 'KZT')}`) : '')
+      + (x.fc ? statCard('Выручка с 1-го числа', x.fc.fact, 'KZT', `${x.fc.days_passed} из ${x.fc.days_total} дней месяца`)
+        + statCard('Прогноз выручки на месяц', x.fc.forecast, 'KZT', `оценка по темпу · год назад ${fmtMoney(x.fc.last_year)}`) : '')
+      + (plan ? statCard('Выполнение плана выручки', plan.value, '%', 'сервис «Продажи», модуль план-факт', plan.status) : '');
+    const right = `<div class="kpi-groups"><div class="group-label">${esc(g1t)}</div><div class="kpis four">${g1}</div>
+      ${g2 ? `<div class="group-label">${fin ? 'Долги и ожидаемые поступления' : 'Ожидаемые поступления'}</div><div class="kpis four" id="forecast">${g2}</div>` : ''}</div>`;
+    return `<section class="sec" id="overview">${secHead(no, 'Обзор', `Главные цифры компании · ${ov.period} против ${ov.compare} (те же дни)`, seg())}
+      <div class="overview-grid${cash ? '' : ' solo'}">${cash ? heroCard(cash, x.cash) : ''}${right}</div>
+      ${alertsCard(ov.kpis, x.tiles)}</section>`;
   }
-
-  function tilesBlock(t) {
-    if (!t.tiles.length) return '';
-    return `<div class="tiles" id="tiles">${t.tiles.map((x) => x.ok ? `
-      <section class="tile" data-service="${esc(x.id)}">
-        <header><h3>${esc(x.title)}</h3><span class="badge ${worst(x.metrics)}">${{ ok: 'в норме', warning: 'внимание', danger: 'риск' }[worst(x.metrics)]}</span></header>
-        ${(x.metrics || []).map((m) => `<div class="row"><span>${esc(m.title)}</span><span class="num"><span class="badge ${esc(m.status)}">${fmtValue(m.value, m.unit)}</span></span></div>`).join('')}
-        ${(x.alerts || []).length ? `<ul class="alerts">${x.alerts.map((a) => `<li>${esc(a.text)}</li>`).join('')}</ul>` : ''}
-        <div class="row muted"><span>обновлено в ${fmtTime(x.generated_at)}</span><a class="btn small secondary" href="${esc(x.base_path)}/" data-open="${esc(x.id)}">Открыть</a></div>
-      </section>` : `
-      <section class="tile gray" data-service="${esc(x.id)}"><header><h3>${esc(x.title)}</h3><span class="badge gray">нет данных</span></header>
-        <p class="muted">Нет данных от сервиса · проверено в ${fmtTime(x.checked_at)}</p></section>`).join('')}</div>`;
-  }
-  function worst(ms) { const s = (ms || []).map((m) => m.status); return s.includes('danger') ? 'danger' : s.includes('warning') ? 'warning' : 'ok'; }
 
   function alertsCard(kpis, tiles) {
     const items = [];
     for (const k of kpis) if (k.status === 'danger') items.push({ level: 'danger', text: `${k.title}: ${fmtValue(k.value, k.unit)} (было ${fmtValue(k.prev_value, k.unit)})` });
     for (const t of tiles.tiles || []) for (const a of t.alerts || []) items.push({ level: a.level, text: `${t.title}: ${a.text}`, link: a.link });
     for (const t of tiles.tiles || []) if (!t.ok) items.push({ level: 'warning', text: `${t.title}: нет данных от сервиса` });
-    return `<div class="card" id="alerts"><h2>Сигналы <span class="sub">· что проверить сегодня</span></h2>${items.length
-      ? `<ul class="alert-list">${items.map((i) => `<li><span class="badge ${esc(i.level)}">${i.level === 'danger' ? 'риск' : 'внимание'}</span><span>${i.link ? `<a href="${esc(i.link)}">${esc(i.text)}</a>` : esc(i.text)}</span></li>`).join('')}</ul>`
-      : empty('Красных сигналов нет')}</div>`;
+    return card('alerts', 'На что обратить внимание', 'Автоматическая проверка показателей и сервисов отделов', items.length
+      ? `<ol class="attn">${items.map((i) => `<li class="${esc(i.level)}"><span>${i.link ? `<a href="${esc(i.link)}">${esc(i.text)}</a>` : esc(i.text)}</span></li>`).join('')}</ol>`
+      : empty('Красных сигналов нет'));
   }
 
-  async function digestCard() {
-    try {
-      const d = await api('/hub/api/digest');
-      return `<div class="card" id="digest"><h2>Утренняя сводка <span class="sub">· ${esc(d.how)} · ${esc(d.date || '')}</span></h2><pre class="mono digest">${esc(d.text)}</pre></div>`;
-    } catch { return ''; }
+  // ---------- 02 Доходы и расходы ----------
+  function pnlCard(p) {
+    const rows = p.lines.map((l) => {
+      const cls = l.kind === 'margin' ? 'is-margin' : l.kind === 'net' ? 'is-net' : l.kind === 'total' ? 'is-section' : 'is-sub';
+      const d = l.prev === null || Number(l.prev) === 0 ? '—' : AIRL.delta(Number(l.amount), Number(l.prev));
+      return `<tr class="${cls}"><td data-label="Строка">${esc(l.title)}</td><td class="n ${Number(l.amount) < 0 ? 'neg' : ''}" data-label="Период">${fmtMoney(l.amount)}</td><td class="n" data-label="Прошлый">${fmtMoney(l.prev)}</td><td class="n" data-label="Изм.">${d}</td></tr>`;
+    }).join('');
+    return card('pnl', 'Отчёт о прибылях и убытках', `${p.period} · без внутригрупповых оборотов · текущий месяц предварительный`,
+      `<div class="scroll-x"><table class="tbl cards"><thead><tr><th>Строка</th><th class="n">Период</th><th class="n">Прошлый</th><th class="n">Изменение</th></tr></thead><tbody>${rows}</tbody></table></div>`);
   }
 
-  async function renderOverview() {
-    view.innerHTML = head('Экран руководителя', 'Загружаем показатели…') + loading(8);
-    bindSeg(renderOverview);
+  function incomeSec(no, x) {
+    const labels = x.rev.points.map((p) => p.label);
+    const np = new Map((x.np ? x.np.points : []).map((p) => [p.label, p.value]));
+    const bars = groupedBars(labels, [
+      { name: 'Выручка', values: x.rev.points.map((p) => p.value), titles: x.rev.points.map((p) => fmtMoney(p.value)) },
+      { name: 'Чистая прибыль', values: labels.map((l) => np.get(l) ?? 0), cls: 's2', titles: labels.map((l) => fmtMoney(np.get(l))) }], { span: 'wide' });
+    const exp = x.pnl.lines.filter((l) => l.kind === 'expense' && Number(l.amount) !== 0)
+      .map((l) => ({ label: l.title, value: Math.abs(Number(l.amount)) })).sort((a, b) => b.value - a.value);
+    const sum = exp.reduce((s, r) => s + r.value, 0);
+    return `<section class="sec" id="income">${secHead(no, 'Доходы и расходы', 'Сколько заработали и на что потратили — по начислению, из 1С')}
+      <div class="grid-wide">${card('', 'Выручка и чистая прибыль', `${GRAIN_N[x.rev.grain]} · наведите на столбец, чтобы увидеть сумму · последний период неполный`, bars)}
+      ${card('', 'Структура расходов', `${x.pnl.period} · статьи ОПиУ`, exp.length ? donut(exp, { total: `${fmtShort(sum)} ₸`, cap: 'расходы' }) : empty('Расходов за период нет'))}</div>
+      ${pnlCard(x.pnl)}</section>`;
+  }
+
+  // ---------- 03 Деньги ----------
+  function moneySec(no, x) {
+    const fin = (x.tiles.tiles || []).find((t) => t.id === 'finance' && t.ok);
+    const mods = fin ? (fin.metrics || []).filter((m) => !['revenue', 'gross_margin', 'cash_balance', 'net_profit', 'receivables_overdue'].includes(String(m.id).split(':')[0])) : [];
+    const notes = fin ? (fin.alerts || []) : [];
+    const pts = x.cash.points.map((p) => ({ label: p.label, value: p.value, title: fmtMoney(p.value) }));
+    return `<section class="sec" id="money">${secHead(no, 'Деньги', 'Остаток на счетах и в кассе обоих юрлиц, в тенге')}
+      <div class="grid-wide">${card('', 'Остаток денег по периодам', `${GRAIN_N[x.cash.grain]} · на конец каждого периода`, areaChart(pts, { height: 260, span: 'wide' }))}
+      ${card('', 'Банк и касса', 'Сверка выписок и движение денег — в сервисе «Финансы»',
+    `${mods.length ? `<div class="mini">${mods.map((m) => `<div><div class="t">${esc(m.title)}</div><div class="n">${fmtBig(m.value, m.unit)}</div></div>`).join('')}</div>` : ''}
+        ${notes.length ? `<ul class="alert-list">${notes.map((n) => `<li><span class="badge ${esc(n.level)}">${n.level === 'danger' ? 'риск' : 'внимание'}</span><span>${esc(n.text)}</span></li>`).join('')}</ul>` : empty('Замечаний от сервиса «Финансы» нет')}
+        <div class="actions spaced"><a class="btn" href="/finance/#/cash">Движение денег</a><a class="btn secondary" href="/finance/#/bank">Сверка банка</a></div>`)}</div></section>`;
+  }
+
+  // ---------- 04 Клиенты и счета ----------
+  function clientsSec(no, x) {
+    const cls = ['', '', 'warning', 'danger', 'danger'];
+    const rows = x.aging.buckets.map((b) => ({ label: b.bucket, value: b.amount, cls: cls[b.ord] || '', sub: `документов с остатком: ${b.docs}` }));
+    const docs = x.aging.buckets.reduce((s, b) => s + Number(b.docs), 0);
+    return `<section class="sec" id="clients">${secHead(no, 'Клиенты и счета', 'Кто и сколько должен — по срокам оплаты, с НДС')}
+      ${card('aging', 'Дебиторка по срокам', `на конец вчерашнего дня · документов с остатком: ${docs}`,
+    `${rows.length ? hbars(rows) : empty('Долгов нет')}<div class="actions"><a class="btn" href="/finance/#/debtors">Должники и звонки</a></div>`)}</section>`;
+  }
+
+  // ---------- 05 Продажи ----------
+  function salesSec(no, ov, x, kpisInOverview) {
+    const ks = kpisInOverview ? '' : `<div class="kpis">${ov.kpis.filter((k) => k.department === 'sales').map((k) => kpi(k)).join('')}</div>`;
+    const f = x.funnel;
+    const tot = f.channels.reduce((s, c) => ({ leads: s.leads + Number(c.leads), won: s.won + Number(c.won) }), { leads: 0, won: 0 });
+    const funnel = f.channels.length ? hbars(f.channels.map((c) => ({ label: c.channel, value: c.leads, sub: `в работе ${c.open} · отказ ${c.lost} · оплата ${c.won}` })), { fmt: (v) => fmtValue(v, 'шт'), one: true })
+      + `<p class="csub">Итого: ${tot.leads} заявок, оплачено ${tot.won}</p>` : empty('Заявок за период нет');
+    const leads = x.lead ? barChart(x.lead.points.map((p, i) => ({ label: p.label, value: p.value, cls: i === x.lead.points.length - 1 ? 'cur' : '' })), { fmt: (v) => String(Math.round(v)), span: 'wide' }) : '';
+    return `<section class="sec" id="sales">${secHead(no, 'Продажи', 'Заявки из amoCRM и оплаты из 1С — без дублей за 30 дней')}${ks}
+      <div class="grid-wide">${card('', 'Заявки по периодам', `${GRAIN_N[grain]} · чёрный — текущий, неполный`, leads)}
+      ${card('funnel', 'Заявки по каналам', `${f.period} · «оплата» — заявки периода, уже оплаченные`, funnel)}</div>
+      <div class="actions"><a class="btn" href="/sales/">Открыть сервис «Продажи»</a></div></section>`;
+  }
+
+  // ---------- 06 Обучение ----------
+  function eduSec(no, ov, x, kpisInOverview) {
+    const ks = kpisInOverview ? '' : `<div class="kpis">${ov.kpis.filter((k) => k.department === 'edu').map((k) => kpi(k)).join('')}</div>`;
+    const en = x.enr ? barChart(x.enr.points.map((p, i) => ({ label: p.label, value: p.value, cls: i === x.enr.points.length - 1 ? 'cur' : '' })), { fmt: (v) => String(Math.round(v)) }) : '';
+    const cr = x.compl ? areaChart(x.compl.points.map((p) => ({ label: p.label, value: p.value, title: fmtValue(p.value, '%') })), { height: 240, fmt: (v) => fmtValue(v, '%') }) : '';
+    return `<section class="sec" id="edu">${secHead(no, 'Обучение', 'Курс VibeOps: записи, заполненность потоков, выпуск')}${ks}
+      <div class="grid2">${card('', 'Записи на курс', `${GRAIN_N[grain]} · человек`, en)}${card('', 'Доля завершивших курс', `${GRAIN_N[grain]} · по выпущенным потокам`, cr)}</div>
+      <div class="actions"><a class="btn" href="/edu/">Открыть сервис «Обучение»</a></div></section>`;
+  }
+
+  // ---------- 07 Команда ----------
+  function teamSec(no, ov, x) {
+    const h = kpiOf(ov.kpis, 'headcount');
+    return `<section class="sec" id="team">${secHead(no, 'Команда', 'Численность по кадровому учёту 1С, на конец периода')}
+      ${card('', 'Численность', `${GRAIN_N[grain]} · сейчас ${h ? fmtValue(h.value, h.unit) : '—'}`,
+    x.head ? barChart(x.head.points.map((p, i) => ({ label: p.label, value: p.value, cls: i === x.head.points.length - 1 ? 'cur' : '' })), { fmt: (v) => String(Math.round(v)), height: 220, span: 'full' }) : empty('Нет данных'))}</section>`;
+  }
+
+  // ---------- 08 Операции ----------
+  function worst(ms) { const s = (ms || []).map((m) => m.status); return s.includes('danger') ? 'danger' : s.includes('warning') ? 'warning' : 'ok'; }
+  function tilesBlock(t) {
+    if (!t.tiles.length) return '';
+    return `<div class="tiles" id="tiles">${t.tiles.map((x) => x.ok ? `
+      <section class="tile" data-service="${esc(x.id)}">
+        <header><h3>${esc(x.title)}</h3><span class="badge ${worst(x.metrics)}">${{ ok: 'в норме', warning: 'внимание', danger: 'риск' }[worst(x.metrics)]}</span></header>
+        <div>${(x.metrics || []).map((m) => `<div class="row"><span>${esc(m.title)}</span><span class="num"><span class="badge ${esc(m.status)}">${fmtValue(m.value, m.unit)}</span></span></div>`).join('')}</div>
+        ${(x.alerts || []).length ? `<ul class="alerts">${x.alerts.map((a) => `<li>${esc(a.text)}</li>`).join('')}</ul>` : ''}
+        <div class="foot"><span>обновлено в ${fmtTime(x.generated_at)}</span><a class="btn small" href="${esc(x.base_path)}/" data-open="${esc(x.id)}">Открыть</a></div>
+      </section>` : `
+      <section class="tile gray" data-service="${esc(x.id)}"><header><h3>${esc(x.title)}</h3><span class="badge gray">нет данных</span></header>
+        <p class="muted">Нет данных от сервиса · проверено в ${fmtTime(x.checked_at)}</p></section>`).join('')}</div>`;
+  }
+  function opsSec(no, x) {
+    const dg = x.digest ? card('digest', 'Утренняя сводка', `${x.digest.how} · ${x.digest.date || ''}`, `<pre class="digest">${esc(x.digest.text)}</pre>`) : '';
+    return `<section class="sec" id="ops">${secHead(no, 'Операции', 'Сервисы отделов: их показатели, сигналы и вход в работу')}
+      ${tilesBlock(x.tiles) || empty('Сервисов отделов для вашей роли нет')}${dg}</section>`;
+  }
+
+  // ---------- вкладки ----------
+  function buildTabs(ov) {
+    const d = ov.departments; const fin = d.includes('finance');
+    return [
+      ['overview', 'Обзор', true], ['income', 'Доходы и расходы', fin], ['money', 'Деньги', fin], ['clients', 'Клиенты и счета', fin],
+      ['sales', 'Продажи', d.includes('sales')], ['edu', 'Обучение', d.includes('edu')],
+      ['team', 'Команда', !!kpiOf(ov.kpis, 'headcount')], ['ops', 'Операции', true],
+    ].filter((t) => t[2]).map(([id, title]) => ({ id, title, href: `#${id}` }));
+  }
+  function setTab(id) {
+    navEl.querySelectorAll('a[data-tab]').forEach((a) => { if (a.dataset.tab === id) a.setAttribute('aria-current', 'true'); else a.removeAttribute('aria-current'); });
+    AIRL.revealTab(navEl);
+  }
+  let spyRaf = 0;
+  function spy() {
+    if (spyRaf) return;
+    spyRaf = requestAnimationFrame(() => {
+      spyRaf = 0;
+      let cur = tabs[0] && tabs[0].id;
+      for (const t of tabs) { const s = document.getElementById(t.id); if (s && s.getBoundingClientRect().top < 160) cur = t.id; }
+      if ((window.innerHeight + window.scrollY) >= document.documentElement.scrollHeight - 4 && tabs.length) cur = tabs[tabs.length - 1].id;
+      if (navEl.querySelector('[aria-current]')?.dataset.tab !== cur) setTab(cur);
+    });
+  }
+  navEl.addEventListener('click', (e) => {
+    const a = e.target.closest('a[data-tab]'); if (!a) return;
+    e.preventDefault();
+    const s = document.getElementById(a.dataset.tab);
+    if (s) s.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+    setTab(a.dataset.tab);
+  });
+
+  // ---------- загрузка и раскладка ----------
+  const skeleton = () => `${secHead(1, 'Обзор', 'Загружаем показатели…', seg())}<div class="overview-grid"><div class="skeleton"></div><div class="kpis four" aria-busy="true">${'<div class="skeleton"></div>'.repeat(8)}</div></div>`;
+
+  async function render() {
+    view.innerHTML = skeleton(); // старые карточки убираем сразу: на экране не бывает цифр другого периода
     try {
-      const [ov, rev, tiles] = await Promise.all([api(`/hub/api/overview?grain=${grain}`), api(`/hub/api/series?metric=revenue&grain=${grain}`).catch(() => null), api('/hub/api/tiles').catch(() => ({ tiles: [] }))]);
-      const fin = ov.departments.includes('finance'); const sales = ov.departments.includes('sales');
-      const [pnl, aging, funnel, fc, dg] = await Promise.all([
+      const S = (m) => api(`/hub/api/series?metric=${m}&grain=${grain}`).catch(() => null);
+      const [ov, tiles] = await Promise.all([api(`/hub/api/overview?grain=${grain}`), api('/hub/api/tiles').catch(() => ({ tiles: [] }))]);
+      const d = ov.departments; const fin = d.includes('finance'); const sales = d.includes('sales'); const edu = d.includes('edu');
+      const ceo = !!kpiOf(ov.kpis, 'headcount');
+      const [pnl, aging, funnel, fc, digest, rev, np, cash, lead, enr, compl, head] = await Promise.all([
         fin ? api(`/hub/api/pnl?grain=${grain}`) : null, fin ? api('/hub/api/aging') : null,
-        sales ? api(`/hub/api/funnel?grain=${grain}`) : null, (fin || sales) ? api('/hub/api/forecast') : null, digestCard()]);
-      view.innerHTML = head(me.role === 'ceo' ? 'Экран руководителя' : `Экран руководителя · ${DEPT_TITLE[ov.departments[0]]}`,
-        `Период: ${ov.period} · сравнение: ${ov.compare} (те же дни) · данные загружены по ${ov.as_of}`)
-        + dg + kpiBlock(ov.kpis) + tilesBlock(tiles)
-        + `<div class="grid2">${rev ? seriesCard('Выручка', rev, 'KZT') : ''}${fc ? forecastCard(fc, tiles.tiles) : alertsCard(ov.kpis, tiles)}</div>`
-        + (fin ? `<div class="grid2">${pnlCard(pnl)}<div>${agingCard(aging)}${alertsCard(ov.kpis, tiles)}</div></div>` : '')
-        + (sales ? `<div class="grid2">${funnelCard(funnel)}${fin ? '' : alertsCard(ov.kpis, tiles)}</div>` : '')
-        + (!fin && !sales ? alertsCard(ov.kpis, tiles) : '');
-      bindSeg(renderOverview);
+        sales ? api(`/hub/api/funnel?grain=${grain}`) : null, (fin || sales) ? api('/hub/api/forecast').catch(() => null) : null,
+        me.role === 'ceo' ? api('/hub/api/digest').catch(() => null) : null,
+        fin ? S('revenue') : null, fin ? S('net_profit') : null, fin ? S('cash_balance') : null,
+        sales ? S('lead') : null, edu ? S('enrollments') : null, edu ? S('course_completion_rate') : null, ceo ? S('headcount') : null]);
+      const x = { tiles, pnl, aging, funnel, fc, digest, rev, np, cash, lead, enr, compl, head };
+      tabs = buildTabs(ov);
+      const no = (id) => tabs.findIndex((t) => t.id === id) + 1;
+      const kpisInOverview = !fin; // без финансов показатели отдела — в «Обзоре»
+      const html = {
+        overview: () => overviewSec(no('overview'), ov, x), income: () => incomeSec(no('income'), x), money: () => moneySec(no('money'), x),
+        clients: () => clientsSec(no('clients'), x), sales: () => salesSec(no('sales'), ov, x, kpisInOverview), edu: () => eduSec(no('edu'), ov, x, kpisInOverview),
+        team: () => teamSec(no('team'), ov, x), ops: () => opsSec(no('ops'), x),
+      };
+      const cur = navEl.querySelector('[aria-current]')?.dataset.tab;
+      navEl.innerHTML = AIRL.nav(tabs, cur && tabs.some((t) => t.id === cur) ? cur : 'overview');
+      view.innerHTML = tabs.map((t) => html[t.id]()).join('');
+      AIRL.caption(`ТОО AIRL · ТОО AIRL Dev · ${ov.period} · данные 1С по ${dmy(ov.as_of)}`);
+      AIRL.updated(new Date());
+      view.querySelectorAll('[data-grain]').forEach((b) => b.addEventListener('click', () => {
+        grain = b.dataset.grain;
+        try { localStorage.setItem('hub.grain', grain); } catch { /* ничего */ }
+        render();
+      }));
       AIRL.applyWidths(view);
       view.querySelectorAll('[data-open]').forEach((a) => a.addEventListener('click', () => { post('/hub/api/open', { service: a.dataset.open }).catch(() => {}); }));
+      spy();
     } catch (e) {
-      view.innerHTML = head('Экран руководителя') + errorBox(e.status === 403 ? 'Экран руководителя недоступен для вашей роли' : `Не удалось загрузить показатели: ${e.message}`);
+      view.innerHTML = secHead(1, 'Обзор', '', seg()) + errorBox(e.status === 403 ? 'Экран руководителя недоступен для вашей роли' : `Не удалось загрузить показатели: ${e.message}`);
     }
-  }
-
-  async function renderDept(dept) {
-    const title = DEPT_TITLE[dept];
-    view.innerHTML = head(title, 'Загружаем…') + loading(4);
-    bindSeg(() => renderDept(dept));
-    try {
-      const ov = await api(`/hub/api/overview?grain=${grain}`);
-      if (!ov.departments.includes(dept)) { view.innerHTML = head(title) + errorBox('Этот отдел недоступен для вашей роли'); return; }
-      const kpis = ov.kpis.filter((k) => k.department === dept);
-      const metric = { finance: 'cash_balance', sales: 'lead', edu: 'enrollments' }[dept];
-      const second = { finance: 'revenue', sales: 'conversion_lead_to_deal', edu: 'course_completion_rate' }[dept];
-      const [s1, s2] = await Promise.all([api(`/hub/api/series?metric=${metric}&grain=${grain}`), api(`/hub/api/series?metric=${second}&grain=${grain}`)]);
-      const u1 = kpis.find((k) => k.metric_id === metric)?.unit; const u2 = kpis.find((k) => k.metric_id === second)?.unit;
-      let extra = '';
-      if (dept === 'finance') { const [p, a] = await Promise.all([api(`/hub/api/pnl?grain=${grain}`), api('/hub/api/aging')]); extra = `<div class="grid2">${pnlCard(p)}${agingCard(a)}</div>`; }
-      if (dept === 'sales') extra = funnelCard(await api(`/hub/api/funnel?grain=${grain}`));
-      view.innerHTML = head(title, `Период: ${ov.period} · данные по ${ov.as_of}`) + kpiBlock(kpis)
-        + `<div class="grid2">${seriesCard(kpis.find((k) => k.metric_id === metric)?.title || metric, s1, u1)}${seriesCard(kpis.find((k) => k.metric_id === second)?.title || second, s2, u2)}</div>`
-        + extra + `<p><a class="btn" href="/${dept}/">Открыть сервис «${esc(title)}»</a></p>`;
-      bindSeg(() => renderDept(dept));
-      AIRL.applyWidths(view);
-    } catch (e) {
-      view.innerHTML = head(title) + errorBox(`Не удалось загрузить: ${e.message}`);
-    }
-  }
-
-  function route() {
-    const r = (location.hash || '#/overview').slice(2);
-    const allowed = ['overview', ...(me.role === 'ceo' ? ['finance', 'sales', 'edu'] : [me.role.split('_')[1]])];
-    const cur = allowed.includes(r) ? r : 'overview';
-    navEl.innerHTML = AIRL.nav([{ id: 'overview', title: 'Обзор', href: '#/overview' },
-      ...allowed.slice(1).map((d) => ({ id: d, title: DEPT_TITLE[d], href: `#/${d}` })),
-      { group: 'Сервисы отделов' },
-      ...me.services.filter((s) => s.id !== 'hub').map((s) => ({ id: 'svc-' + s.id, title: `${s.title} →`, href: `${s.base_path}/` }))], cur);
-    if (cur === 'overview') renderOverview(); else renderDept(cur);
   }
 
   // Продлеваем токен за 10 минут до конца срока.
@@ -173,9 +249,13 @@
   }
 
   (async () => {
-    try { me = await AIRL.topbar('Экран руководителя', 'hub'); } catch (e) { view.innerHTML = errorBox('Не удалось открыть хаб: ' + e.message); return; }
-    window.addEventListener('hashchange', route);
-    route();
+    try { me = await AIRL.topbar('Экран руководителя', 'hub', { brandTag: 'h1' }); } catch (e) { view.innerHTML = errorBox('Не удалось открыть хаб: ' + e.message); return; }
+    // Старые адреса разделов (#/finance и т. п.) ведут к нужному разделу страницы.
+    const OLD = { '#/finance': 'income', '#/sales': 'sales', '#/edu': 'edu' };
+    const target = OLD[location.hash] || location.hash.replace(/^#\/?/, '');
+    await render();
+    if (target && document.getElementById(target)) { document.getElementById(target).scrollIntoView(); setTab(target); }
+    window.addEventListener('scroll', spy, { passive: true });
     scheduleRefresh();
     AIRL.registerSW('/');
   })();

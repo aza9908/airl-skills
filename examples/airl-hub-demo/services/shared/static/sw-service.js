@@ -4,8 +4,8 @@
    и запись — только сеть. Чужие пути (хаб, другие отделы) не трогает. */
 const BASE = new URL(self.registration.scope).pathname;          // например /finance/
 const ID = BASE.replace(/\//g, '');
-const VERSION = `${ID}-v1`;
-const SHELL = [BASE, BASE + 'app.js', BASE + 'manifest.webmanifest', BASE + 'assets/airl-tokens.css', BASE + 'assets/ui.css', BASE + 'assets/ui.js', BASE + 'assets/logo-airl-white.png'];
+const VERSION = `${ID}-v2`;
+const SHELL = [BASE, BASE + 'app.js', BASE + 'manifest.webmanifest', BASE + 'assets/airl-tokens.css', BASE + 'assets/ui.css', BASE + 'assets/ui.js', BASE + 'assets/logo-airl-white.png', BASE + 'assets/star-mark.svg'];
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL)).catch(() => {})); });
 self.addEventListener('activate', (e) => { e.waitUntil(caches.keys().then((k) => Promise.all(k.filter((x) => x.startsWith(`${ID}-`) && !x.startsWith(VERSION)).map((x) => caches.delete(x)))).then(() => self.clients.claim())); });
 self.addEventListener('message', (e) => { if (e.data === 'skipWaiting') self.skipWaiting(); });

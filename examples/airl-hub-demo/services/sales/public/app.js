@@ -8,7 +8,8 @@
   const dlg = document.getElementById('dlg');
   let me;
   const items = [{ id: 'overview', title: 'Воронка', href: '#/overview' }, { id: 'plan', title: 'План-факт', href: '#/plan' }, { id: 'leads', title: 'Открытые заявки', href: '#/leads' }];
-  const head = (t, sub, right = '') => `<div class="page-head"><div><h1>${esc(t)}</h1><div class="sub">${esc(sub || '')}</div></div><span class="spacer"></span>${right}</div>`;
+  let curNo = 1;
+  const head = (t, sub, right = '') => AIRL.head(curNo, t, sub, right);
   const PLAN_TITLE = { 'plan_completion:revenue': 'План по выручке', 'plan_completion:lead': 'План по заявкам', 'plan_completion:enrollments': 'План по записям на курс' };
 
   async function overview() {
@@ -18,7 +19,7 @@
     const rows = d.funnel.map((c) => `<tr><td data-label="Канал">${esc(c.channel)}</td><td class="n" data-label="Заявки">${c.leads}</td><td class="n" data-label="В работе">${c.open}</td><td class="n" data-label="Отказ">${c.lost}</td><td class="n" data-label="Оплата">${c.won}</td></tr>`).join('');
     view.innerHTML = head('Продажи', 'Текущий месяц с 1-го по вчера · заявки из amoCRM, оплаты из 1С · цифры из metrics')
       + `<div class="kpis">${d.kpis.map((k) => kpiCard({ ...k, id: k.metric_id }, { sub: `было ${fmtValue(k.prev_value, k.unit)}` })).join('')}${plan}</div>`
-      + `<div class="grid2"><div class="card"><h2>Заявки по месяцам <span class="sub">· без дублей</span></h2>${barChart(d.series.map((s, i) => ({ label: s.label, value: s.value, cls: i === d.series.length - 1 ? 'cur' : '' })), { fmt: (v) => String(Math.round(v)) })}</div>
+      + `<div class="grid2"><div class="card"><h2>Заявки по месяцам <span class="sub">без дублей</span></h2>${barChart(d.series.map((s, i) => ({ label: s.label, value: s.value, cls: i === d.series.length - 1 ? 'cur' : '' })), { fmt: (v) => String(Math.round(v)) })}</div>
          <div class="card"><h2>Каналы этого месяца</h2>${rows ? `<table class="tbl cards"><thead><tr><th>Канал</th><th class="n">Заявки</th><th class="n">В работе</th><th class="n">Отказ</th><th class="n">Оплата</th></tr></thead><tbody>${rows}</tbody></table>` : empty('Заявок пока нет')}</div></div>`;
   }
 
@@ -75,7 +76,7 @@
 
   async function route() {
     const name = (location.hash || '#/overview').slice(2).split('?')[0];
-    nav.innerHTML = AIRL.nav(items, name);
+    { const cur = name; nav.innerHTML = AIRL.nav(items, cur); curNo = Math.max(1, items.findIndex((i) => i.id === cur) + 1); AIRL.revealTab(nav); }
     try {
       if (name === 'plan') await plan(); else if (name === 'leads') await leads(); else await overview();
     } catch (e) { view.innerHTML = errorBox(e.status === 403 ? e.message : `Не удалось загрузить данные: ${e.message}`); }
@@ -83,6 +84,7 @@
 
   (async () => {
     try { me = await AIRL.topbar('Продажи', 'sales'); } catch (e) { view.innerHTML = errorBox(e.message); return; }
+    AIRL.caption('Продажи · заявки amoCRM, план-факт и напоминания · оплаты из 1С');
     if (!['ceo', 'head_sales', 'staff_sales'].includes(me.role)) { view.innerHTML = errorBox('Сервис «Продажи» недоступен для вашей роли'); return; }
     if (me.role === 'staff_sales' && !location.hash) location.hash = '#/leads';
     window.addEventListener('hashchange', route); route(); AIRL.registerSW(`${B}/`);
