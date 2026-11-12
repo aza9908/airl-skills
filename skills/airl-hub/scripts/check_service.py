@@ -14,6 +14,11 @@
 окружения AIRL_HUB_TOKEN и никогда не печатается. Он отправляется и заголовком
 Authorization: Bearer, и cookie (имя cookie — параметр --cookie).
 
+Ворота 6 и 7 (файлы): SECURITY.md и REVIEW.md ищутся рядом с airl.service.json
+(или --security / --review). Строки разбираются тем же правилом, что в
+/airl-progress (scripts/progress.py): верхняя строка «Можно открывать людям …: да»
+и «Блокирующих замечаний: 0» с заполненным коммитом.
+
 Код выхода:
   0 — все проверенные ворота зелёные (с --files-only: только файловые);
   1 — есть красные ворота;
@@ -71,6 +76,65 @@ def read_map(path):
         if access_col is not None and access_col < len(cells):
             grants[m.group(1)] = cells[access_col]
     return version, metrics, departments, grants
+
+
+PLACEHOLDER = re.compile(r"\[[^\]]{2,}\]")
+
+
+def _filled(line):
+    s = re.sub(r"\[[ xX]\]", "", line)
+    s = re.sub(r"\[[^\]]*\]\([^)]*\)", "", s)
+    return not PLACEHOLDER.search(s) and "..." not in s and "…" not in s
+
+
+def security_verdict(text):
+    """'да' | 'нет' | None — по первой строке вердикта (как progress.check_security_verdict)."""
+    for ln in text.splitlines():
+        low = ln.lower()
+        if "открывать нельзя" in low:
+            return "нет"
+        if "можно открывать" in low or "подключать к хабу" in low:
+            if not _filled(ln) or re.search(r"да\s*/\s*нет", low):
+                continue
+            m = re.search(r":\s*(да|нет)\b", low.replace("*", ""))
+            if m:
+                return m.group(1)
+            if low.strip().startswith("продукт можно открывать"):
+                return "да"
+    return None
+
+
+def review_blocking(text):
+    """Число открытых блокирующих из REVIEW.md или None (нет строки / коммит не вписан)."""
+    m = re.search(r"Блокирующих замечаний\**\s*:\s*\**\s*(\d+)", text)
+    if not m:
+        return None
+    c = re.search(r"Коммит\**\s*:\s*\**\s*(\S+)", text)
+    if c and c.group(1).startswith("["):
+        return None
+    return int(m.group(1))
+
+
+def check_docs(security_path, review_path):
+    """Ворота 6 и 7 по файлам."""
+    try:
+        with open(security_path, encoding="utf-8") as f:
+            v = security_verdict(f.read())
+        report("6 Безопасность", OK if v == "да" else FAIL,
+               "SECURITY.md: можно подключать — да" if v == "да" else
+               ("SECURITY.md: вердикт «нет» → /airl-cybersecurity" if v == "нет"
+                else "SECURITY.md: нет заполненной строки вердикта → /airl-cybersecurity"))
+    except OSError:
+        report("6 Безопасность", FAIL, f"нет {security_path} → /airl-cybersecurity")
+    try:
+        with open(review_path, encoding="utf-8") as f:
+            n = review_blocking(f.read())
+        report("7 Код-ревью", OK if n == 0 else FAIL,
+               "REVIEW.md: блокирующих 0" if n == 0 else
+               (f"REVIEW.md: открытых блокирующих {n} → /airl-code-review" if n is not None
+                else "REVIEW.md: нет числа блокирующих или не вписан коммит → /airl-code-review"))
+    except OSError:
+        report("7 Код-ревью", FAIL, f"нет {review_path} → /airl-code-review")
 
 
 def version_tuple(v):
@@ -137,7 +201,7 @@ def check_files(svc, map_version, map_metrics, departments, grants):
     data = svc.get("data") if isinstance(svc.get("data"), dict) else {}
     writes = data.get("writes", []) or []
     allowed = f"mart_{svc.get('department', sid)}"
-    bad = [w for w in writes if str(w).split(".")[0] != allowed]
+    bad = [w for w in writes if str(w).split(".")[0].split("(")[0] != allowed]
     report("4 Свой участок", FAIL if bad else OK,
            f"пишет вне {allowed}: {', '.join(map(str, bad))}" if bad else f"пишет только в {allowed}")
     reads = data.get("reads", []) or []
@@ -166,6 +230,10 @@ def check_files(svc, map_version, map_metrics, departments, grants):
 
     roles = svc.get("roles") if isinstance(svc.get("roles"), dict) else {}
     view = roles.get("view", []) or []
+    if "summary" not in roles:
+        report("10 Роли", WARN, "нет roles.summary — кому отдавать /api/hub/summary (обычно ceo и head_<отдел>, не staff)")
+    elif any(str(r).startswith("staff_") for r in roles.get("summary") or []):
+        report("10 Роли", WARN, "roles.summary включает staff — сотрудники увидят сводку отдела; это есть в SPEC?")
     if "ceo" not in view:
         report("10 Роли", WARN, "роль ceo не видит сервис — руководитель не увидит его в хабе")
     foreign = [r for r in view if re.match(r"^(head|staff)_", r) and not r.endswith(f"_{sid}")]
@@ -317,6 +385,9 @@ def main():
     p.add_argument("--url", help="адрес хаба, например https://hub.company.kz")
     p.add_argument("--cookie", default="airl_session", help="имя cookie входа из карты")
     p.add_argument("--files-only", action="store_true", help="самопроверка без живых адресов")
+    p.add_argument("--security", help="путь к SECURITY.md (по умолчанию рядом с airl.service.json)")
+    p.add_argument("--review", help="путь к REVIEW.md (по умолчанию рядом с airl.service.json)")
+    p.add_argument("--no-docs", action="store_true", help="не проверять ворота 6 и 7 по файлам")
     a = p.parse_args()
 
     try:
@@ -330,6 +401,10 @@ def main():
         return 2
 
     check_files(svc, map_version, map_metrics, departments, grants)
+    if not a.no_docs:
+        base = os.path.dirname(os.path.abspath(a.service))
+        check_docs(a.security or os.path.join(base, "SECURITY.md"),
+                   a.review or os.path.join(base, "REVIEW.md"))
     if a.registry:
         check_registry(svc, a.registry)
     if a.url and not a.files_only:
@@ -347,7 +422,7 @@ def main():
         print(f"\nИтог: красных: {fails} — в хаб не подключаем")
         return 1
     if a.files_only:
-        print("\nИтог: файловые ворота 1–4 зелёные. Живые ворота 5, 8, 9 проверяет команда AIRL при приёмке")
+        print("\nИтог: файловые ворота 1–4, 6, 7 зелёные. Живые ворота 5, 8, 9 проверяет команда AIRL при приёмке")
         return 0
     if skips:
         print("\nИтог: красных нет, но живые ворота 5, 8, 9 проверены не полностью — подключать нельзя")

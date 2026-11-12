@@ -435,7 +435,8 @@ grep -v -E "(^|/)(package-lock\.json|npm-shrinkwrap\.json|yarn\.lock|pnpm-lock\.
 STRICT='-----BEGIN ([A-Z]+ )?PRIVATE KEY-----|AKIA[0-9A-Z]{16}|gh[pousr]_[A-Za-z0-9]{36}|github_pat_[A-Za-z0-9_]{50,}|xox[baprs]-[A-Za-z0-9-]{10,}|(sk|rk)_live_[A-Za-z0-9]{20,}|AIza[0-9A-Za-z_-]{35}|sk-ant-[A-Za-z0-9_-]{20,}|sk-(proj-)?[A-Za-z0-9_-]{40,}|[0-9]{8,10}:AA[A-Za-z0-9_-]{33}|glpat-[A-Za-z0-9_-]{20}'
 GENERIC='(password|passwd|secret|token|api[_-]?key|access[_-]?key|private[_-]?key|client[_-]?secret)["'"'"']?[[:space:]]*[:=][[:space:]]*["'"'"'][^"'"'"'$<{[:space:]]{8,}["'"'"']'
 DBURL='(postgres(ql)?|mysql|mongodb(\+srv)?|redis|amqp)://[^:/@[:space:]"'"'"']+:[^@/[:space:]"'"'"'$<{]{3,}@'
-PLACEHOLDER='example|changeme|change_me|your[_-]|xxx|<[^>]+>|\$\{|dummy|placeholder|password@|pass@|secret@|test@|postgres:postgres@'
+# :'имя' — переменная psql (ALTER ROLE … PASSWORD :'loader_pass'), а не пароль
+PLACEHOLDER="example|changeme|change_me|your[_-]|xxx|<[^>]+>|\\\$\\{|dummy|placeholder|password@|pass@|secret@|test@|postgres:postgres@|:'[a-z_]+'"
 
 secret_hits() { # secret_hits <regex> <extra grep flags> — печатает только file:line
   grep_list "$WORK/scope_secrets" "$1" ${2:+"$2"} | grep -viE "$PLACEHOLDER" | cut -d: -f1,2
@@ -510,7 +511,10 @@ fi
 
 # ---------- Миграции базы ----------
 
-grep -E '(^|/)(migrations?|migrate|alembic/versions|db/migrate|prisma/migrations|supabase/migrations|sql/migrations|flyway|liquibase)/.*\.(sql|py|ts|js)$|(^|/)[^/]*migration[^/]*\.sql$' "$WORK/scope" > "$WORK/migrations" || true
+# SQL хранилища (dwh/sql, dwh/marts, db/, sql/) — тоже миграции; свои пути — MIGRATIONS_GLOB (регулярное выражение)
+MIG_RE='(^|/)(migrations?|migrate|alembic/versions|db/migrate|prisma/migrations|supabase/migrations|sql/migrations|flyway|liquibase)/.*\.(sql|py|ts|js)$|(^|/)[^/]*migration[^/]*\.sql$|(^|/)(dwh|db|sql)/.*\.sql$'
+[ -n "${MIGRATIONS_GLOB:-}" ] && MIG_RE="$MIG_RE|$MIGRATIONS_GLOB"
+grep -E "$MIG_RE" "$WORK/scope" > "$WORK/migrations" || true
 nm=$(grep -c . "$WORK/migrations")
 if [ "$nm" = 0 ]; then
   check "Безопасность миграций" "не требуется" "файлов миграций в проверяемых файлах нет"

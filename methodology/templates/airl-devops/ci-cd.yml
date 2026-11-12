@@ -1,0 +1,324 @@
+# .github/workflows/ci-cd.yml — проверки, сборка, staging и продакшен.
+# Шаблон навыка airl-devops. Подробности — references/production.md.
+#
+# Цепочка:
+#   pull request в main   → quality (линтер, типы, миграции на чистой базе, тесты, аудит, review_checks)
+#   push в main           → quality → build (образ + сканирование Trivy) → staging
+#   метка v* (git tag)    → quality → build → production (после одобрения в окружении production)
+#   кнопка Run workflow   → production с указанной меткой образа (повтор или откат), без сборки
+#
+# Что настроить в GitHub (Settings):
+#   Environments → staging, production. В production: Required reviewers и
+#     Deployment branches and tags → только метки v*. Доступность окружений и проверяющих
+#     для приватных репозиториев зависит от тарифа GitHub — уточните в документации.
+#     Нет окружений на тарифе — те же секреты заводятся как секреты репозитория (имена разные,
+#     поэтому шаблон работает и так), а продакшен выкладывается только кнопкой Run workflow.
+#   Секреты:    STAGING_SSH_KEY, STAGING_HOST, STAGING_USER — в окружении staging;
+#               PROD_SSH_KEY, PROD_HOST, PROD_USER — в окружении production.
+#   Переменные: STAGING_URL, PROD_URL (https://адрес без косой черты в конце),
+#               STAGING_KNOWN_HOSTS, PROD_KNOWN_HOSTS (вывод ssh-keyscan -t ed25519 <IP>,
+#               сверенный с консолью провайдера), HEALTH_PATH (по умолчанию /healthz).
+#
+# В репозитории должны быть:
+#   scripts/review_checks.sh — скопирован из навыка airl-code-review;
+#   scripts/migrate.sh       — применяет миграции к $DATABASE_URL (одна команда для CI и сервера).
+# Шаги Node.js выполняются, если есть package-lock.json; шаги Python — если есть requirements.txt.
+
+name: ci-cd
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Полный хеш коммита, образ которого выложить в продакшен (повтор или откат)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: "22"
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  quality:
+    name: Проверки качества
+    if: github.event_name != 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U ci -d ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgres://ci:ci@localhost:5432/ci
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # история нужна review_checks.sh для поиска ключей
+
+      # ---------- Node.js ----------
+      - if: hashFiles('package-lock.json') != ''
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - name: Зависимости (npm)
+        if: hashFiles('package-lock.json') != ''
+        run: npm ci
+      - name: Линтер (npm)
+        if: hashFiles('package-lock.json') != ''
+        run: npm run lint --if-present
+      - name: Проверка типов (npm)
+        if: hashFiles('package-lock.json') != ''
+        run: npm run typecheck --if-present
+
+      # ---------- Python ----------
+      - if: hashFiles('requirements.txt') != ''
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - name: Зависимости (pip)
+        if: hashFiles('requirements.txt') != ''
+        run: |
+          python -m pip install -r requirements.txt
+          python -m pip install ruff pytest pytest-cov pip-audit
+      - name: Линтер (ruff)
+        if: hashFiles('requirements.txt') != ''
+        run: ruff check .
+
+      # ---------- Миграции на чистой базе ----------
+      - name: Миграции на чистой базе и повторный прогон
+        run: |
+          if [ ! -f scripts/migrate.sh ]; then
+            echo "::warning::Нет scripts/migrate.sh — миграции не проверены (references/production.md)"
+            exit 0
+          fi
+          dump() {
+            docker run --rm --network host -e PGPASSWORD=ci postgres:16 \
+              pg_dump -h localhost -U ci -d ci --schema-only --no-owner --no-privileges
+          }
+          bash scripts/migrate.sh
+          dump > /tmp/schema_1.sql
+          bash scripts/migrate.sh
+          dump > /tmp/schema_2.sql
+          if ! diff -u /tmp/schema_1.sql /tmp/schema_2.sql; then
+            echo "::error::Повторный прогон миграций изменил схему — миграции не идемпотентны"
+            exit 1
+          fi
+
+      # ---------- Тесты (на базе после миграций) ----------
+      - name: Тесты (npm)
+        if: hashFiles('package-lock.json') != ''
+        run: npm run test --if-present
+      - name: Тесты (pytest)
+        if: hashFiles('requirements.txt') != ''
+        run: |
+          rc=0
+          pytest -q --cov=. --cov-report=term || rc=$?
+          # 5 — тестов нет; это находка код-ревью, а не падение сборки
+          if [ "$rc" -ne 0 ] && [ "$rc" -ne 5 ]; then exit "$rc"; fi
+      # Сквозные тесты Playwright (главный путь) — добавьте, когда они есть:
+      # - run: npx playwright install --with-deps chromium && npx playwright test
+
+      # ---------- Уязвимости зависимостей ----------
+      - name: Аудит зависимостей (npm)
+        if: hashFiles('package-lock.json') != ''
+        run: npm audit --omit=dev --audit-level=critical
+      - name: Аудит зависимостей (pip)
+        if: hashFiles('requirements.txt') != ''
+        run: pip-audit -r requirements.txt
+
+      # ---------- Проверки из код-ревью ----------
+      - name: review_checks.sh (ключи, миграции, Dockerfile, /healthz)
+        run: |
+          if [ ! -f scripts/review_checks.sh ]; then
+            echo "::error::Нет scripts/review_checks.sh — скопируйте из навыка airl-code-review"
+            exit 1
+          fi
+          rc=0
+          bash scripts/review_checks.sh --no-tools --out review_checks.md || rc=$?
+          cat review_checks.md >> "$GITHUB_STEP_SUMMARY"
+          exit "$rc"
+
+      - name: Сборка (npm)
+        if: hashFiles('package-lock.json') != ''
+        run: npm run build --if-present
+
+  build:
+    name: Образ и сканирование
+    needs: quality
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Имя образа строчными буквами
+        run: echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Сборка образа
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: ${{ env.IMAGE }}:${{ github.sha }}
+          build-args: |
+            APP_VERSION=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      # Закрепите действие по хешу коммита после проверки на странице релизов.
+      - name: Сканирование образа (Trivy) — критические уязвимости останавливают выкладку
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.IMAGE }}:${{ github.sha }}
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          format: table
+      - name: Отправка образа в реестр
+        run: |
+          docker push "$IMAGE:$GITHUB_SHA"
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
+            docker tag "$IMAGE:$GITHUB_SHA" "$IMAGE:$GITHUB_REF_NAME"
+            docker push "$IMAGE:$GITHUB_REF_NAME"
+          fi
+
+  deploy-staging:
+    name: Выкладка на staging
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: staging
+      url: ${{ vars.STAGING_URL }}
+    concurrency:
+      group: deploy-staging
+      cancel-in-progress: false
+    steps:
+      - name: Выкладка на сервер
+        env:
+          SSH_KEY: ${{ secrets.STAGING_SSH_KEY }}
+          DEPLOY_HOST: ${{ secrets.STAGING_HOST }}
+          DEPLOY_USER: ${{ secrets.STAGING_USER }}
+          KNOWN_HOSTS: ${{ vars.STAGING_KNOWN_HOSTS }}
+          TAG: ${{ github.sha }}
+        run: |
+          install -m 700 -d ~/.ssh
+          install -m 600 /dev/null ~/.ssh/deploy_key
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          if [ -n "$KNOWN_HOSTS" ]; then
+            printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+            CHECK=yes
+          else
+            echo "::warning::Нет STAGING_KNOWN_HOSTS — ключ сервера не сверяется"
+            CHECK=accept-new
+          fi
+          ssh -i ~/.ssh/deploy_key -o BatchMode=yes -o StrictHostKeyChecking="$CHECK" \
+            "$DEPLOY_USER@$DEPLOY_HOST" "$TAG"
+      - name: Проверка снаружи
+        env:
+          APP_URL: ${{ vars.STAGING_URL }}
+          HEALTH_PATH: ${{ vars.HEALTH_PATH || '/healthz' }}
+        run: |
+          [ -n "$APP_URL" ] || { echo "::warning::Нет STAGING_URL — проверка снаружи пропущена"; exit 0; }
+          for _ in $(seq 1 12); do
+            if curl -fsS -m 10 "$APP_URL$HEALTH_PATH" | tee /tmp/health.json | grep -q '"status"'; then
+              cat /tmp/health.json; exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::$APP_URL$HEALTH_PATH не отвечает"; exit 1
+
+  deploy-production:
+    name: Выкладка в продакшен
+    needs: build
+    if: >-
+      !cancelled() && (
+        (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && needs.build.result == 'success')
+        || github.event_name == 'workflow_dispatch'
+      )
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment:
+      name: production
+      url: ${{ vars.PROD_URL }}
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    steps:
+      - name: Какую версию выкладываем
+        env:
+          INPUT_TAG: ${{ inputs.image_tag }}
+        run: |
+          TAG="${INPUT_TAG:-$GITHUB_SHA}"
+          [[ "$TAG" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::Нужен полный хеш коммита (40 знаков)"; exit 1; }
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+      - uses: actions/checkout@v4
+        if: github.event_name == 'push'
+        with:
+          fetch-depth: 0
+      - name: Метка стоит на коммите из main
+        if: github.event_name == 'push'
+        run: |
+          git fetch origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main || {
+            echo "::error::Метка $GITHUB_REF_NAME не на ветке main: в продакшен идёт только то, что прошло staging"
+            exit 1
+          }
+      - name: Выкладка на сервер
+        env:
+          SSH_KEY: ${{ secrets.PROD_SSH_KEY }}
+          DEPLOY_HOST: ${{ secrets.PROD_HOST }}
+          DEPLOY_USER: ${{ secrets.PROD_USER }}
+          KNOWN_HOSTS: ${{ vars.PROD_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          install -m 600 /dev/null ~/.ssh/deploy_key
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          if [ -n "$KNOWN_HOSTS" ]; then
+            printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+            CHECK=yes
+          else
+            echo "::warning::Нет PROD_KNOWN_HOSTS — ключ сервера не сверяется"
+            CHECK=accept-new
+          fi
+          ssh -i ~/.ssh/deploy_key -o BatchMode=yes -o StrictHostKeyChecking="$CHECK" \
+            "$DEPLOY_USER@$DEPLOY_HOST" "$TAG"
+      - name: Проверка снаружи
+        env:
+          APP_URL: ${{ vars.PROD_URL }}
+          HEALTH_PATH: ${{ vars.HEALTH_PATH || '/healthz' }}
+        run: |
+          [ -n "$APP_URL" ] || { echo "::warning::Нет PROD_URL — проверка снаружи пропущена"; exit 0; }
+          for _ in $(seq 1 12); do
+            if curl -fsS -m 10 "$APP_URL$HEALTH_PATH" | tee /tmp/health.json | grep -q '"status"'; then
+              cat /tmp/health.json; exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::$APP_URL$HEALTH_PATH не отвечает — скрипт на сервере уже откатил версию, проверьте"; exit 1

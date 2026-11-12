@@ -159,6 +159,14 @@ argument-hint: "[пусто — полная проверка · «только 
 
 По каждой группе: что проверил, как, результат. **Проверка действием** важнее чтения кода.
 
+Готовый скрипт атак — `${CLAUDE_SKILL_DIR}/scripts/attacks.js` (Node.js 18+, без
+зависимостей): без токена, подмена роли в токене, `alg=none`, чужой ключ, роли и
+подмена id из списка, ПДн в `summary`, заголовки, права базы. Скопируй в проект
+`scripts/attacks.js` и `${CLAUDE_SKILL_DIR}/templates/attacks.json`, впиши свои пути,
+роли и SQL; токены тестовых пользователей — в переменных `TOKEN_<РОЛЬ>`. Запуск:
+`node scripts/attacks.js attacks.json http://127.0.0.1:<порт>` — его таблица идёт
+в «Проверки действием» отчёта. Атаки, которых в скрипте нет, — руками.
+
 ### 0. Боты и открытые адреса
 
 Нет бота и вебхуков — пропусти группу и скажи об этом. Если в продукте есть бот
@@ -238,7 +246,7 @@ CREATE ROLE svc_sales LOGIN PASSWORD :'from_secret_store';
 REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 GRANT USAGE ON SCHEMA core, metrics TO svc_sales;
 -- чтение — только то, что перечислено в data.reads файла airl.service.json
-GRANT SELECT ON core.deals, core.clients, metrics.revenue TO svc_sales;
+GRANT SELECT ON core.deals, core.clients, metrics.m_revenue TO svc_sales;
 GRANT USAGE, CREATE ON SCHEMA mart_sales TO svc_sales;
 GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA mart_sales TO svc_sales;
 -- никаких прав на mart_* других отделов, никакого SUPERUSER и владения core

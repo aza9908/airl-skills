@@ -1,0 +1,28 @@
+{
+  "company": "Demo Coffee",
+  "language": "русский",
+  "max_lines": 12,
+  "model": "claude-opus-5-5",
+  "effort": "medium",
+  "titles": {
+    "qc_reject_rate": "Доля отклонённых партий",
+    "qc_unchecked_overdue": "Партии без проверки больше суток",
+    "receivables_overdue": "Просроченная дебиторка",
+    "client_churn_risk": "Клиенты под риском"
+  },
+  "sources": [
+    {
+      "name": "Обжарка и контроль качества",
+      "sql": "SELECT metric_id, period, value, unit, status FROM mart_roastqc.m_qc_reject_rate ORDER BY period DESC LIMIT 2"
+    },
+    {
+      "name": "Обжарка и контроль качества",
+      "sql": "SELECT metric_id, period, value, unit, status FROM mart_roastqc.m_qc_unchecked_overdue"
+    },
+    {
+      "name": "Единые показатели (хаб)",
+      "sql": "SELECT metric_id, label AS period, value, unit, status, prev_value AS compare_value, prev_from::text || '–' || prev_to::text AS compare_period FROM metrics.kpi_period('month')"
+    }
+  ],
+  "$comment": "Источник возвращает metric_id, period, value, unit, status; для сравнения — compare_value и compare_period (те же дни прошлого периода, как metrics.kpi_period в /airl-dwh). Без них сравнивается с прошлой строкой, кроме неполного текущего месяца. Для % разница — в п.п."
+}

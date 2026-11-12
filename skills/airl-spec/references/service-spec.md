@@ -107,14 +107,20 @@
 
 Шаблон — `${CLAUDE_SKILL_DIR}/templates/airl.service.json`. Пример заполнения для
 отдела продаж: `id`, `department` = `sales`, `base_path` = `/sales`, `roles.view` =
-`["ceo", "head_sales", "staff_sales"]`, `data.reads` = `["core.deals", "core.clients",
-"metrics.revenue"]`, `data.writes` = `["mart_sales"]`, `hub.health` = `/sales/healthz`,
+`["ceo", "head_sales", "staff_sales"]`, `roles.summary` = `["ceo", "head_sales"]`, `data.reads` = `["core.deals", "core.clients",
+"metrics.m_revenue"]`, `data.writes` = `["mart_sales"]`, `hub.health` = `/sales/healthz`,
 `hub.summary` = `/sales/api/hub/summary`, `hub.metrics` = `["revenue", "avg_check"]`,
 `pii` = `["client_name", "client_phone"]`.
 
 `id` совпадает с id отдела в карте, `metrics` — только id из карты, `writes` — только
 своя витрина. Если не сходится — это ошибка ТЗ, а не формальность.
 
+- `roles.summary` — роли, которым сервис отдаёт `/api/hub/summary` (обычно `ceo`
+  и `head_<отдел>`; `staff` сводку отдела не получает). Нет поля — скрипт приёмки
+  предупреждает.
+- `modules` — id модулей `/airl-modules`, поставленных в сервис (`["receivables"]`).
+- `data.reads` с колонками — `core.clients(client_id, name)`: если сервису нужна только
+  часть колонок, права выдаются только на них (`/airl-dwh`, `/airl-cybersecurity`).
 - `reads_shared` — таблицы чужих витрин, которые отдел-владелец разрешил читать
   (например `mart_care.recall_list`). Каждая должна быть отмечена в карте,
   раздел 6, колонка «Даёт доступ».

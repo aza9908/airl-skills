@@ -1,0 +1,7 @@
+name,company,department,mode,repo,branch,live_url,cohort,path
+Айгерим С.,Кофейня Арома,продажи,solo,aigerim-s/calls-tracker,main,https://calls.aroma.kz,VibeOps-2026-11,
+Тимур Б.,Торговый дом Север,продажи,hub,sever-hub/sales,main,,VibeOps-2026-11,
+Динара К.,Торговый дом Север,склад,hub,https://github.com/sever-hub/stock,main,,VibeOps-2026-11,
+Руслан Ж.,Клиника Дару,регистратура,solo,ruslan-zh/appointments,,,VibeOps-2026-12,
+Мадина Е.,Клиника Дару,финансы,hub,airl-kz/airl-hub-demo,main,,VibeOps-2026-12,examples/airl-hub-demo/services/finance
+Команда AIRL — хаб Север,Торговый дом Север,команда AIRL,airl,sever-hub/hub,main,,VibeOps-2026-11,

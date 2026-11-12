@@ -1,0 +1,30 @@
+# prometheus.yml — что собирать. Шаблон навыка airl-devops.
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+
+rule_files:
+  - /etc/prometheus/alert-rules.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  - job_name: node
+    static_configs:
+      - targets: ["node-exporter:9100"]
+        labels:
+          server: "<имя сервера>"
+
+  # Метрики приложения, если оно отдаёт /metrics (prom-client, prometheus_client).
+  # Приложение должно быть в сети monitoring, адрес /metrics — без доступа снаружи.
+  # - job_name: app
+  #   metrics_path: /metrics
+  #   static_configs:
+  #     - targets: ["<проект>-prod-app:<порт>"]

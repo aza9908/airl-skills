@@ -637,3 +637,63 @@ auth.<домен хаба> {
 не ловит адрес `/sales` без косой черты. Провайдер входа стоит на поддомене
 `auth.` — под путём `/auth` большинство провайдеров без отдельной настройки
 не работают.
+
+## Хранилище хаба: одноразовый контейнер установки и миграций
+
+Схемы, роли и миграции хранилища (`/srv/hub/dwh/`) ставит не человек руками, а
+одноразовый сервис `setup` в том же Compose: он выполняет SQL по порядку и
+завершается, а загрузка и сервисы стартуют только после его успешного выхода.
+Повторный запуск безопасен, если миграции написаны идемпотентно (`IF NOT EXISTS`,
+`CREATE OR REPLACE`).
+
+```yaml
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    env_file: .env.db
+    volumes: [db_data:/var/lib/postgresql/data]
+    networks: [dwh]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      retries: 5
+  setup:
+    image: postgres:16
+    env_file: .env.db
+    volumes: ["./sql:/sql:ro"]
+    entrypoint: ["bash", "-c", "export PGPASSWORD=\"$$POSTGRES_PASSWORD\"; for f in /sql/*.sql; do psql -v ON_ERROR_STOP=1 -h db -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\" -f \"$$f\" || exit 1; done"]
+    depends_on: { db: { condition: service_healthy } }
+    networks: [dwh]
+    restart: "no"
+  loader:
+    image: ghcr.io/<владелец>/<загрузка>:${APP_TAG}
+    depends_on: { setup: { condition: service_completed_successfully } }
+    networks: [dwh]
+volumes:
+  db_data:
+networks:
+  dwh:
+    external: true
+```
+
+## Сборка за корпоративным прокси с подменой сертификатов
+
+В сети многих компаний исходящий HTTPS идёт через прокси, который подменяет
+сертификат своим: `npm ci`, `pip install` и `apt` внутри сборки падают с ошибкой
+сертификата. Не отключай проверку (`NODE_TLS_REJECT_UNAUTHORIZED=0`, `--trusted-host`) —
+передай корневой сертификат компании секретом сборки, он не останется в образе:
+
+```dockerfile
+# syntax=docker/dockerfile:1
+RUN --mount=type=secret,id=ca,required=false \
+    if [ -f /run/secrets/ca ]; then export NODE_EXTRA_CA_CERTS=/run/secrets/ca PIP_CERT=/run/secrets/ca; fi; \
+    npm ci
+```
+
+```bash
+docker build --secret id=ca,src=/путь/к/corp-ca.pem -t <проект>:test .
+```
+
+Сертификат выдаёт IT компании (файл `.pem` или `.crt`). На сервере и в GitHub Actions
+прокси обычно нет — там сборка идёт без секрета.

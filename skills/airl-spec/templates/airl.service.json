@@ -1,6 +1,6 @@
 {
   "$schema": "airl.service/v1",
-  "$comment": "Контракт сервиса отдела для хаба. Пишет /airl-spec, режим B. Читают /airl-pwa, /airl-cybersecurity, /airl-modules, /airl-hub (scripts/check_service.py) и /airl-progress. Замени всё в [...]. id = id отдела в разделе 6 карты; base_path = /<id>; hub.health и hub.summary начинаются с /<id>/; hub.metrics — 2–4 id из раздела 4 карты; data.writes — только mart_<отдел>; data.reads — только core.* и metrics.*; reads_shared — чужие витрины с разрешением в карте; public_paths — вебхуки ботов, иначе []. Ключ $comment можно оставить.",
+  "$comment": "Контракт сервиса отдела для хаба. Пишет /airl-spec, режим B. Читают /airl-pwa, /airl-cybersecurity, /airl-modules, /airl-hub (scripts/check_service.py) и /airl-progress. Замени всё в [...]. id = id отдела в разделе 6 карты; base_path = /<id>; hub.health и hub.summary начинаются с /<id>/; hub.metrics — 2–4 id из раздела 4 карты; data.writes — только mart_<отдел>; data.reads — только core.* и metrics.*; reads_shared — чужие витрины с разрешением в карте; public_paths — вебхуки ботов, иначе []; roles.summary — кому отдаётся /api/hub/summary (обычно ceo и head_<отдел>, не staff); modules — id поставленных модулей /airl-modules; в data.reads можно указать колонки: core.clients(client_id, name) — права выдаются только на них. Ключ $comment можно оставить.",
   "id": "[id отдела]",
   "title": "[Название сервиса]",
   "department": "[id отдела]",
@@ -11,10 +11,12 @@
   "base_path": "/[id отдела]",
   "roles": {
     "view": ["ceo", "head_[id отдела]", "staff_[id отдела]"],
-    "edit": ["head_[id отдела]", "staff_[id отдела]"]
+    "edit": ["head_[id отдела]", "staff_[id отдела]"],
+    "summary": ["ceo", "head_[id отдела]"]
   },
+  "modules": [],
   "data": {
-    "reads": ["core.[таблица]", "metrics.[id показателя]"],
+    "reads": ["core.[таблица](колонка, колонка)", "metrics.m_[id показателя]"],
     "reads_shared": [],
     "writes": ["mart_[id отдела]"]
   },

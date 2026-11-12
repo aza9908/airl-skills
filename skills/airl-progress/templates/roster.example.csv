@@ -4,3 +4,4 @@ name,company,department,mode,repo,branch,live_url,cohort,path
 Динара К.,Торговый дом Север,склад,hub,https://github.com/sever-hub/stock,main,,VibeOps-2026-11,
 Руслан Ж.,Клиника Дару,регистратура,solo,ruslan-zh/appointments,,,VibeOps-2026-12,
 Мадина Е.,Клиника Дару,финансы,hub,airl-kz/airl-hub-demo,main,,VibeOps-2026-12,examples/airl-hub-demo/services/finance
+Команда AIRL — хаб Север,Торговый дом Север,команда AIRL,airl,sever-hub/hub,main,,VibeOps-2026-11,

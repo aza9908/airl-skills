@@ -1,0 +1,21 @@
+{
+  "$comment": "Конфигурация scripts/attacks.js (/airl-cybersecurity). Замени пути, роли и SQL на свои. Токены — в переменных TOKEN_<РОЛЬ>, строки подключения — в переменных из списка db. Ничего секретного здесь не пишется.",
+  "base_url": "http://127.0.0.1:3000",
+  "health": "/sales/healthz",
+  "protected": ["/sales/api/deals", "/sales/api/hub/summary"],
+  "low_role": "staff_sales",
+  "high_path": "/sales/api/deals",
+  "summary": "/sales/api/hub/summary",
+  "pii_patterns": ["\\+7\\s?7\\d{2}", "@[a-z0-9-]+\\.[a-z]{2,}"],
+  "roles": [
+    ["staff_marketing", "GET", "/sales/api/deals", 403],
+    ["staff_sales", "GET", "/sales/api/deals/ЧУЖОЙ_ID", 404],
+    ["staff_sales", "POST", "/sales/api/plan", 403, {"value": 1}],
+    ["staff_sales", "GET", "/sales/api/hub/summary", 403]
+  ],
+  "db": [
+    ["SALES_DB_URL", "INSERT INTO core.clients (client_id) VALUES ('attack')", "нет прав"],
+    ["SALES_DB_URL", "INSERT INTO mart_marketing.notes (text) VALUES ('attack')", "нет прав"],
+    ["SALES_DB_URL", "SELECT * FROM core.employees LIMIT 1", "нет прав"]
+  ]
+}

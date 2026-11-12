@@ -392,7 +392,8 @@ class ProgressTest(unittest.TestCase):
         self.assertIn("ahead", kinds["cohort/ahead"])
         self.assertIn("stalled", kinds["cohort/stalled"])
         stalled = next(f for f in s["cohort/stalled"]["flags"] if f["kind"] == "stalled")
-        self.assertEqual(stalled["days"], 12)                   # 5 → 17 ноября
+        self.assertEqual(stalled["days"], 9)                    # 5 → 18 ноября, рабочих дней
+        self.assertEqual(stalled["label"], "застрял 9 раб. дн.")
         self.assertIn("behind", kinds["cohort/stalled"])
         self.assertIn("behind", kinds["cohort/empty"])
         self.assertNotIn("stalled", kinds["cohort/empty"])      # коммит вчера
@@ -422,10 +423,23 @@ class ProgressTest(unittest.TestCase):
         p = [by_id(s)["cohort/mid"]["percent"] for s in self.hist]
         self.assertLess(p[0], p[1])
         self.assertEqual(p[1], p[2])
-        # третий снимок: процент не рос 4 дня, коммит 4+ дня назад — «застрял»
+        # третий снимок: процент не рос 4 дня, но два из них — выходные: рабочих дней
+        # без роста 2, с коммита 3 — при пороге 4 рабочих дня это не «застрял»
         last = by_id(self.hist[2])["cohort/mid"]
         self.assertEqual(last["days_flat"], 4)
-        self.assertIn("stalled", {f["kind"] for f in last["flags"]})
+        self.assertNotIn("stalled", {f["kind"] for f in last["flags"]})
+        # те же данные в календарных днях (stall_workdays: false) — «застрял 4 дн.»
+        cfg = progress.load_config(str(self.weights))
+        cfg["thresholds"]["stall_workdays"] = False
+        rows = [json.loads(json.dumps(last))]
+        progress.flags_for(rows, self.hist[:2], cfg, progress.parse_ts(NOW[2]))
+        self.assertIn("застрял 4 дн.", [f["label"] for f in rows[0]["flags"]])
+
+    def test_workdays(self):
+        d = progress.parse_ts
+        self.assertEqual(progress.workdays_between(d("2026-11-20T18:00:00Z"), d("2026-11-23T09:00:00Z")), 1)  # пт → пн
+        self.assertEqual(progress.workdays_between(d("2026-11-21T10:00:00Z"), d("2026-11-22T10:00:00Z")), 0)  # сб → вс
+        self.assertEqual(progress.workdays_between(d("2026-11-05T10:00:00Z"), d("2026-11-19T10:00:00Z")), 10)
         self.assertEqual(by_id(self.hist[2])["cohort/mid"]["stage_done"], "data")
         self.assertIn("Тест-когорта", self.tg)
         self.assertIn("Нужна помощь", self.tg)
@@ -838,7 +852,7 @@ class MonorepoTest(unittest.TestCase):
         self.assertEqual(st["activity"]["commits_7d"], 0)
         self.assertEqual(st["activity"]["days_since_commit"], 10)
         stalled = [f for f in st["flags"] if f["kind"] == "stalled"]
-        self.assertEqual(stalled and stalled[0]["label"], "застрял 10 дн.")
+        self.assertEqual(stalled and stalled[0]["label"], "застрял 6 раб. дн.")   # 10 календарных
         self.assertNotIn("stalled", {f["kind"] for f in fin["flags"]})
         return fin, st
 

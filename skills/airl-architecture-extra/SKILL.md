@@ -189,7 +189,7 @@ D) Свой вариант
 Из ответа считаются резервные копии и нужен ли балансировщик нагрузки (распределяет
 запросы между несколькими копиями сервиса). Балансировщик и несколько копий предлагай
 только при «несколько минут» или «нельзя вообще», либо при тысячах пользователей из
-базового вопроса. Не знаешь ответа — «сутки и час простоя» и ежедневная копия.
+базового вопроса. Не знаешь ответа — «простой — часы, потеря — сутки» (`downtime_ok: hours`, `data_loss_ok: day`) и ежедневная копия.
 Скажи прямо: копия, которую ни разу не пробовали восстановить, копией не считается.
 
 **7. Какое логирование и мониторинг нужны?**
@@ -287,7 +287,7 @@ flowchart LR
 # airl-context
 level: 1 | 2 | 3
 services: [название: назначение]
-data_organization: per-service-db | shared-db-schemas | shared-legacy
+data_organization: single-db | per-service-db | shared-db-schemas | shared-legacy
 needs_dwh: true | false | unknown
 components: [cache, files, queue, scheduler]
 service_communication: requests | queue | shared-db | mixed

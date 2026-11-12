@@ -1,0 +1,102 @@
+# .github/workflows/progress.yml — ежедневная проверка прогресса когорты VibeOps.
+# Шаблон навыка airl-progress. Кладётся в репозиторий КОГОРТЫ (не в репозитории участников).
+#
+# Что в репозитории когорты:
+#   roster.csv                         — список участников (шаблон roster.example.csv)
+#   weights.yml                        — веса и пороги (шаблон weights.yml)
+#   tools/airl-progress/scripts/progress.py
+#   tools/airl-progress/templates/report.html   — скопированы из папки навыка
+#   data/progress.jsonl                — история снимков (создаётся сама)
+#
+# Что настроить в GitHub (Settings репозитория когорты):
+#   Secrets → Actions → PROGRESS_TOKEN — fine-grained токен ТОЛЬКО НА ЧТЕНИЕ:
+#       Repository access: репозитории участников (или вся организация курса),
+#       Permissions: Contents — Read-only, Metadata — Read-only (Pull requests — Read-only,
+#       если нужен счётчик открытых PR). Срок жизни — до конца курса.
+#   Variables → PUBLISH_PAGES = true — публиковать отчёт на GitHub Pages.
+#       ВНИМАНИЕ: на бесплатном тарифе сайт Pages открыт всем, даже из приватного
+#       репозитория. Включайте, только если участники согласны, или храните отчёт
+#       как артефакт запуска (он сохраняется всегда, вкладка Actions → запуск → Artifacts).
+#   Settings → Pages → Source: GitHub Actions (если PUBLISH_PAGES = true).
+#   Необязательно: Secrets TELEGRAM_BOT_TOKEN и TELEGRAM_CHAT_ID — сводка тренеру в Telegram.
+
+name: progress
+
+on:
+  schedule:
+    - cron: "17 2 * * *"      # каждый день в 02:17 UTC (утро по Алматы и Ташкенту)
+  workflow_dispatch: {}
+
+permissions:
+  contents: write              # закоммитить снимок в data/
+  pages: write
+  id-token: write
+
+concurrency:
+  group: progress
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Проверить репозитории участников
+        env:
+          GITHUB_TOKEN: ${{ secrets.PROGRESS_TOKEN }}
+        run: |
+          test -n "$GITHUB_TOKEN" || { echo "Нет секрета PROGRESS_TOKEN"; exit 1; }
+          python3 tools/airl-progress/scripts/progress.py check \
+            --roster roster.csv --weights weights.yml \
+            --data data/progress.jsonl --out report --telegram-text
+
+      - name: Сохранить снимок в репозитории
+        run: |
+          git config user.name "airl-progress"
+          git config user.email "airl-progress@users.noreply.github.com"
+          git add data/progress.jsonl data/.cache
+          git commit -m "progress: снимок $(date -u +%Y-%m-%d)" || echo "Нет изменений"
+          git push
+
+      - name: Отчёт как артефакт запуска
+        uses: actions/upload-artifact@v4
+        with:
+          name: progress-report
+          path: report/
+          retention-days: 30
+
+      - name: Сводка в Telegram
+        env:
+          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          if [ -z "$TG_TOKEN" ] || [ -z "$TG_CHAT" ]; then echo "Telegram не настроен — пропускаю"; exit 0; fi
+          curl -sS -o /dev/null -w "Telegram: %{http_code}\n" \
+            "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TG_CHAT}" \
+            --data-urlencode "text@report/telegram.txt"
+
+      - uses: actions/configure-pages@v5
+        if: ${{ vars.PUBLISH_PAGES == 'true' }}
+
+      - uses: actions/upload-pages-artifact@v3
+        if: ${{ vars.PUBLISH_PAGES == 'true' }}
+        with:
+          path: report/
+
+  pages:
+    needs: check
+    if: ${{ vars.PUBLISH_PAGES == 'true' }}
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4

@@ -57,7 +57,7 @@ STAGES = [
     ("data", "Данные"),
     ("security", "Защита"),
     ("launch", "Запуск"),
-    ("demo", "Demo Day"),
+    ("demo", "Demo Day · хаб: принят"),
 ]
 STAGE_LABEL = dict(STAGES)
 STAGE_ORDER = [s for s, _ in STAGES]
@@ -87,9 +87,22 @@ ITEMS = [
     ("devops_md", "launch", "DEVOPS.md", "both", "/airl-devops", "памятка по серверу и выкладке"),
     ("review_ok", "launch", "REVIEW.md без блокирующих", "both", "/airl-code-review", "код-ревью: 0 блокирующих замечаний"),
     ("live", "launch", "Живой /healthz", "live", "/airl-devops", "адрес продукта отвечает 200 на /healthz"),
-    ("demo", "demo", "Готов к Demo Day", "both", "/airl-hub", "solo: отметить Demo Day в SPEC.md, раздел 12; хаб: приёмка /airl-hub"),
+    ("demo", "demo", "Demo Day / принят в хаб", "both", "/airl-hub", "solo: после показа отметить Demo Day в SPEC.md, раздел 12 (/airl-devops); хаб: приёмка /airl-hub — «подключён» в HUB_CHECK.md"),
 ]
 ITEM_BY_ID = {i[0]: i for i in ITEMS}
+
+# Команда AIRL, неделя 0: репозиторий хаба (mode: airl в списке). В средние и воронку
+# потоков не входит — отдельный блок отчёта «Команда AIRL: готовность хаба».
+# id, подпись, что сделать
+AIRL_ITEMS = [
+    ("scope_signed", "SCOPE.md подписан", "/airl-spec A0: SCOPE.md со строкой «Утвердил» (имя, дата)"),
+    ("company_map", "COMPANY_MAP.md", "/airl-spec A: карта компании в корне репозитория хаба"),
+    ("login_contract", "Контракт входа", "/airl-hub создать хаб: в карте, раздел 8, заполнен адрес JWKS"),
+    ("dev_env", "Среда для разработки", "/airl-dwh: в карте, раздел 8, заполнено «Тестовое хранилище»"),
+    ("dwh", "DWH.md", "/airl-dwh: общее хранилище спроектировано"),
+    ("devops_md", "DEVOPS.md", "/airl-devops: сервер и прокси хаба"),
+    ("hub_registry", "hub/services.json", "/airl-hub создать хаб: реестр сервисов"),
+]
 
 MODULE_IDS = [
     "appointments", "approvals", "bank-reconciliation", "churn-risk", "complaints",
@@ -101,7 +114,7 @@ MODULE_IDS = [
 DEFAULT_CONFIG = {
     "stages": {"start": 5, "plan": 20, "data": 25, "security": 15, "launch": 25, "demo": 10},
     "items": {i[0]: 1 for i in ITEMS},
-    "thresholds": {"stage_done": 0.75, "stall_days": 4, "behind_margin": 15,
+    "thresholds": {"stage_done": 0.75, "stall_days": 4, "stall_workdays": True, "behind_margin": 15,
                    "ahead_margin": 10, "median_margin": 20},
     "schedule": {"start_date": "", "expected_end_of_week": [5, 25, 50, 65, 90, 100]},
 }
@@ -290,7 +303,7 @@ def load_roster(path: str) -> list[dict]:
             "id": pid, "owner": owner, "repo": name, "path": sub,
             "name": r.get("name") or pid, "company": r.get("company", ""),
             "department": r.get("department", ""),
-            "mode": "hub" if mode == "hub" else "solo",
+            "mode": "hub" if mode == "hub" else ("airl" if mode in ("airl", "airl-hub", "команда airl") else "solo"),
             "branch": r.get("branch", ""), "live_url": r.get("live_url", ""),
             "cohort": r.get("cohort", ""),
         })
@@ -579,6 +592,7 @@ def _filled(line: str) -> bool:
 
 
 def section(text: str, num: str) -> str:
+    text = re.sub(r"<!--.*?-->", "", text, flags=re.S)     # подсказки шаблона не считаются
     m = re.search(rf"^##\s*{re.escape(num)}\.?\s.*$", text, re.M)
     if not m:
         return ""
@@ -619,7 +633,7 @@ def check_security_verdict(text: str) -> float:
         if "открывать нельзя" in low or "пока открывать нельзя" in low:
             return 0.0
         if "можно открывать" in low or "подключать к хабу" in low:
-            if not _filled(ln):
+            if not _filled(ln) or re.search(r"да\s*/\s*нет", low):
                 continue
             m = re.search(r":\s*(да|нет)\b", low.replace("*", ""))
             if m:
@@ -633,6 +647,9 @@ def check_review(text: str) -> float:
     m = re.search(r"Блокирующих замечаний\**\s*:\s*\**\s*(\d+)", text)
     if not m:
         return 0.3
+    c = re.search(r"Коммит\**\s*:\s*\**\s*(\S+)", text)
+    if c and c.group(1).startswith("["):      # шаблон: коммит не вписан — ревью не засчитано
+        return 0.3
     return 1.0 if int(m.group(1)) == 0 else 0.3
 
 
@@ -641,6 +658,8 @@ def check_hub_decision(text: str) -> float:
     if not m:
         return 0.0
     v = m.group(1).lower()
+    if " / " in v or v.strip().startswith("["):   # варианты из шаблона не выбраны
+        return 0.0
     if "не подключ" in v:
         return 0.25
     if "подключ" in v:
@@ -682,6 +701,44 @@ def _find(files: dict, *names) -> str | None:
             if k.lower().endswith("/" + n.lower()) and k.count("/") <= 2:
                 return k
     return None
+
+
+def _table_row_filled(text: str, key: str) -> bool:
+    for ln in text.splitlines():
+        if key in ln and ln.lstrip().startswith("|"):
+            cells = [c.strip() for c in ln.strip().strip("|").split("|")]
+            val = " ".join(cells[1:])
+            return bool(val) and _filled(val) and "заполняет команда" not in val.lower() and "[кто]" not in val
+    return False
+
+
+def evaluate_airl(src) -> dict:
+    """Неделя 0 команды AIRL в репозитории хаба: 0..1 по каждому пункту AIRL_ITEMS."""
+    files = src.files()
+    r = {}
+    sc = _find(files, "SCOPE.md")
+    st = src.read(sc) if sc else None
+    r["scope_signed"] = 0.0 if not st else (1.0 if any(
+        re.search(r"Утвердил", ln) and _filled(ln) and re.search(r"\d", ln) for ln in st.splitlines()) else 0.5)
+    cm = "COMPANY_MAP.md" if "COMPANY_MAP.md" in files else None
+    ct = src.read(cm) if cm else None
+    r["company_map"] = 1.0 if ct else 0.0
+    r["login_contract"] = 1.0 if ct and _table_row_filled(ct, "JWKS") else 0.0
+    r["dev_env"] = 1.0 if ct and _table_row_filled(ct, "Тестовое хранилище") else 0.0
+    dwh = _find(files, "DWH.md")
+    r["dwh"] = 0.0 if not dwh else (1.0 if files[dwh]["size"] >= 300 else 0.5)
+    dv = _find(files, "DEVOPS.md", "DEPLOY.md")
+    r["devops_md"] = 0.0 if not dv else (1.0 if files[dv]["size"] >= 300 else 0.5)
+    reg = "hub/services.json" if "hub/services.json" in files else None
+    if reg:
+        try:
+            json.loads(src.read(reg) or "")
+            r["hub_registry"] = 1.0
+        except ValueError:
+            r["hub_registry"] = 0.3
+    else:
+        r["hub_registry"] = 0.0
+    return r
 
 
 def evaluate(src, part: dict, cache_repo: dict, live: bool) -> dict:
@@ -897,6 +954,20 @@ def parse_ts(s: str | None) -> dt.datetime | None:
     return t if t.tzinfo else t.replace(tzinfo=dt.timezone.utc)
 
 
+def workdays_between(a: dt.datetime, b: dt.datetime) -> int:
+    """Рабочие дни (пн–пт) после даты a по дату b включительно."""
+    d0, d1 = a.date(), b.date()
+    if d1 <= d0:
+        return 0
+    n = (d1 - d0).days
+    full, rest = divmod(n, 7)
+    cnt = full * 5
+    for i in range(1, rest + 1):
+        if (d0 + dt.timedelta(days=full * 7 + i)).weekday() < 5:
+            cnt += 1
+    return cnt
+
+
 def flags_for(rows: list[dict], history: list[dict], cfg: dict, now: dt.datetime) -> None:
     """Флаги участника. План и середина (медиана) считаются внутри его потока."""
     th = cfg["thresholds"]
@@ -924,14 +995,23 @@ def flags_for(rows: list[dict], history: list[dict], cfg: dict, now: dt.datetime
             flat_since = parse_ts(snap["ts"]) or flat_since
         days_flat = int((now - flat_since).total_seconds() // 86400)
         r["days_flat"] = days_flat
+        # «Застрял» по умолчанию — в рабочих днях: у участника 4–6 часов в неделю,
+        # выходные без коммитов — норма, а не повод для флага (stall_workdays: false — календарные).
+        workdays = bool(th.get("stall_workdays", True))
+        if workdays:
+            w_commit = workdays_between(lc, now) if lc else None
+            w_flat = workdays_between(flat_since, now)
+        else:
+            w_commit, w_flat = days_commit, days_flat
         stall_n = 0
         if r["stage"] != "finished":
-            if days_commit is not None and days_commit >= th["stall_days"]:
-                stall_n = days_commit
-            if days_flat >= th["stall_days"]:
-                stall_n = max(stall_n, days_flat)
+            if w_commit is not None and w_commit >= th["stall_days"]:
+                stall_n = w_commit
+            if w_flat >= th["stall_days"]:
+                stall_n = max(stall_n, w_flat)
         if stall_n:
-            fl.append({"kind": "stalled", "days": stall_n, "label": f"застрял {stall_n} дн."})
+            unit = "раб. дн." if workdays else "дн."
+            fl.append({"kind": "stalled", "days": stall_n, "label": f"застрял {stall_n} {unit}"})
         c = r.get("cohort", "")
         exp, median = exp_by[c], med_by[c]
         ref = exp if exp is not None else median
@@ -1005,8 +1085,30 @@ def collect(args, cfg) -> dict:
     gh = None if args.local else GitHub(cache)
     if gh:
         print(f"GitHub: доступ — {gh.mode()}", file=sys.stderr)
-    rows = []
+    rows, team = [], []
     for p in roster:
+        if p["mode"] == "airl":
+            row = {k: p[k] for k in ("id", "name", "company", "cohort", "path")}
+            try:
+                if args.local:
+                    path = find_local(Path(args.local), p)
+                    if not path:
+                        raise ApiError("нет локальной папки репозитория хаба")
+                    src = LocalRepo(path, p["branch"], now, p.get("path", ""))
+                else:
+                    if not p["owner"]:
+                        raise ApiError("для GitHub нужен адрес owner/name")
+                    src = GitHubRepo(gh, p["owner"], p["repo"], p["branch"], now, p.get("path", ""))
+                items = evaluate_airl(src)
+                row["items"] = items
+                row["percent"] = round(100.0 * sum(items.values()) / len(items), 1)
+                row["next"] = [{"item": i, "label": lb, "todo": td} for i, lb, td in AIRL_ITEMS
+                               if items.get(i, 0) < 1.0][:3]
+                row["activity"] = src.activity()
+            except ApiError as e:
+                row.update({"items": {}, "percent": 0.0, "error": str(e), "next": []})
+            team.append(row)
+            continue
         row = {k: p[k] for k in ("id", "name", "company", "department", "mode", "cohort", "path")}
         if args.cohort and not row["cohort"]:
             row["cohort"] = args.cohort
@@ -1061,7 +1163,7 @@ def collect(args, cfg) -> dict:
             "cohorts": cohorts,
             "expected": next(iter(exps)) if len(exps) == 1 else None,
             "weights_hash": hashlib.sha256(json.dumps(cfg, sort_keys=True, default=str).encode()).hexdigest()[:12],
-            "participants": rows}
+            "participants": rows, "airl_team": team}
     data_path.parent.mkdir(parents=True, exist_ok=True)
     with data_path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(snap, ensure_ascii=False) + "\n")
@@ -1183,6 +1285,13 @@ def summary_md(hist: list[dict]) -> str:
     lines += ["", "## Воронка этапов (сколько участников прошли этап)", ""]
     for s, n in funnel:
         lines.append(f"- {STAGE_LABEL[s]}: {n}")
+    team = snap.get("airl_team") or []
+    if team:
+        lines += ["", "## Команда AIRL: готовность хаба (неделя 0, в средние не входит)", "",
+                  "| Репозиторий | Компания | % | Чего нет |", "|---|---|---|---|"]
+        for t_ in team:
+            todo = t_.get("error") or "; ".join(n["todo"] for n in t_.get("next", [])) or "всё готово"
+            lines.append(f"| {t_['name']} | {t_.get('company', '')} | {t_['percent']:.0f} | {todo} |")
     return "\n".join(lines) + "\n"
 
 
