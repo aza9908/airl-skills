@@ -1,0 +1,63 @@
+# .github/workflows/collect.yml — ежедневный сбор ТЗ участников в коллекцию AIRL.
+# Шаблон навыка airl-collect. Кладётся в репозиторий КОЛЛЕКЦИИ (закрытый, например <owner>/airl-specs),
+# не в репозитории участников.
+#
+# Что лежит в репозитории коллекции:
+#   roster.csv                             — тот же список участников, что у /airl-progress
+#   tools/airl-collect/scripts/collect.py  — скопирован из папки навыка
+#   <поток>/<компания>/<участник>/         — собранные ТЗ (создаются сами)
+#   README.md, PAINS.md, METRICS.md, summary.json — оглавление (пересобирается само)
+#
+# Что настроить в GitHub (Settings репозитория коллекции):
+#   General → Danger Zone → Change visibility: Private. Скрипт откажется писать в публичный.
+#   Secrets → Actions → COLLECT_TOKEN — fine-grained токен ТОЛЬКО НА ЧТЕНИЕ:
+#       Resource owner: организация курса (где репозитории участников),
+#       Repository access: репозитории участников,
+#       Permissions: Contents — Read-only, Metadata — Read-only. Срок жизни — до конца курса.
+#   Писать в сам репозиторий коллекции токену НЕ нужно: коммит делает встроенный токен
+#   запуска (permissions: contents: write ниже), он работает только с этим репозиторием.
+
+name: collect
+
+on:
+  schedule:
+    - cron: "41 1 * * *"      # каждый день в 01:41 UTC — до утренней сводки /airl-progress
+  workflow_dispatch: {}
+
+permissions:
+  contents: write              # закоммитить собранные ТЗ в этот репозиторий
+
+concurrency:
+  group: collect
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Собрать ТЗ участников
+        env:
+          GITHUB_TOKEN: ${{ secrets.COLLECT_TOKEN }}
+          COLLECTION_TOKEN: ${{ github.token }}   # только чтобы проверить, что репозиторий закрытый
+        run: |
+          test -n "$GITHUB_TOKEN" || { echo "Нет секрета COLLECT_TOKEN"; exit 1; }
+          python3 tools/airl-collect/scripts/collect.py collect --roster roster.csv --out .
+
+      - name: Закоммитить, только если что-то изменилось
+        run: |
+          git config user.name "airl-collect"
+          git config user.email "airl-collect@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "Изменений нет — коммит не нужен"
+            exit 0
+          fi
+          git commit -m "collect: ТЗ участников $(date -u +%Y-%m-%d)"
+          git push
